@@ -250,6 +250,48 @@ function nearestOsm(els, key, value, lat, lon) {
   return best;
 }
 
+/* --- Route (Valhalla): Polyline6 dekodieren, Position auf der Route finden --- */
+function decodePolyline(str, prec = 6) {
+  const f = Math.pow(10, prec), out = []; let i = 0, lat = 0, lon = 0;
+  while (i < str.length) {
+    for (let k = 0; k < 2; k++) {
+      let shift = 0, res = 0, b;
+      do { b = str.charCodeAt(i++) - 63; res |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20 && i < str.length);
+      const d = (res & 1) ? ~(res >> 1) : (res >> 1);
+      if (k === 0) lat += d; else lon += d;
+    }
+    out.push([lat / f, lon / f]);
+  }
+  return out;
+}
+function routeCum(pts) {
+  const c = [0];
+  for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + haversine(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
+  return c;
+}
+/* nächster Punkt auf der Route: Segment i, Anteil t, Abstand off (m), zurückgelegter Weg along (m) */
+function routeLocate(pts, cum, lat, lon) {
+  if (pts.length < 2) return { i: 0, t: 0, off: pts.length ? haversine(lat, lon, pts[0][0], pts[0][1]) : Infinity, along: 0 };
+  const kx = Math.cos(lat * D2R) * D2R * R_EARTH, ky = D2R * R_EARTH;
+  let best = { off: Infinity };
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = (pts[i][1] - lon) * kx, ay = (pts[i][0] - lat) * ky, bx = (pts[i + 1][1] - lon) * kx, by = (pts[i + 1][0] - lat) * ky;
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const t = L2 > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L2)) : 0;
+    const off = Math.hypot(ax + t * dx, ay + t * dy);
+    if (off < best.off) best = { i, t, off, along: cum[i] + t * (cum[i + 1] - cum[i]) };
+  }
+  return best;
+}
+function routePointAt(pts, cum, s) {
+  const n = pts.length; if (!n) return null;
+  if (s <= 0 || n === 1) return pts[0];
+  if (s >= cum[n - 1]) return pts[n - 1];
+  let i = 0; while (i < n - 2 && cum[i + 1] < s) i++;
+  const seg = cum[i + 1] - cum[i], t = seg > 0 ? (s - cum[i]) / seg : 0;
+  return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t];
+}
+
 /* ====================== Browser-Teil ====================== */
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
@@ -257,11 +299,13 @@ const $ = s => document.querySelector(s);
 const DEFAULTS = {
   fovH: 50, phoneH: 1.4, compassOffset: 0, sensor: 'auto', autoMode: true, maxLogs: 40,
   apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
-  keepAwake: true, smoothing: 0.25
+  keepAwake: true, smoothing: 0.25,
+  routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
   set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
   target: null, mode: 'cam', modeLock: null, stream: null, track: null, torch: false, dir: null,
+  route: null, steer: null, routeBusy: false, routeTs: 0, offCount: 0,
   map: null, L: {}, follow: true, wake: null, lastFrame: 0, lastMap: 0, sensor: null, started: false
 };
 window.CV = S; // zum Nachsehen in der Browser-Konsole
@@ -512,7 +556,75 @@ async function loadOcNearby() {
 /* ---------- Ziel ---------- */
 function setTarget(t) {
   S.target = t; idbPut('meta', t, 'target').catch(() => {});
+  S.route = null; S.steer = null;
   renderTop(); drawCacheMarkers(); closeSheet();
+  if (S.set.routing) requestRoute('user');
+}
+
+/* ---------- Routing (Valhalla) ---------- */
+function targetKey(t) { return t ? t.lat.toFixed(6) + ',' + t.lon.toFixed(6) : ''; }
+function activeRoute() { return S.set.routing && S.route && S.target && S.route.key === targetKey(S.target) ? S.route : null; }
+async function requestRoute(reason) {
+  const t = S.target, p = S.pos;
+  if (!S.set.routing || !t || S.routeBusy) return;
+  if (!p) { if (reason !== 'auto') toast('Route folgt, sobald GPS da ist'); return; }
+  const u = (S.set.routeUrl || '').trim();
+  if (!u) { toast('Routing-Adresse fehlt (Einstellungen)'); return; }
+  S.routeBusy = true; S.routeTs = Date.now();
+  const req = { locations: [{ lat: p.lat, lon: p.lon, type: 'break' }, { lat: t.lat, lon: t.lon, type: 'break' }],
+    costing: S.set.routeCosting, directions_options: { units: 'kilometers', language: 'de-DE' } };
+  try {
+    const r = /\.php(\?|$)/.test(u)
+      ? await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(req) })
+      : await fetch(u.replace(/\/+$/, '') + '/route?json=' + encodeURIComponent(JSON.stringify(req)));
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.trip) throw new Error(j && (j.error || j.error_code) ? `${j.error || ''}${j.error_code ? ' (' + j.error_code + ')' : ''}` : 'HTTP ' + r.status);
+    if (targetKey(S.target) !== targetKey(t)) return; // Ziel inzwischen gewechselt
+    const leg = j.trip.legs[0], pts = decodePolyline(leg.shape, 6), last = pts[pts.length - 1];
+    S.route = {
+      key: targetKey(t), pts, cum: routeCum(pts), len: j.trip.summary.length * 1000, time: j.trip.summary.time,
+      man: (leg.maneuvers || []).map(m => ({ txt: m.instruction || '', i: m.begin_shape_index })),
+      gap: haversine(last[0], last[1], t.lat, t.lon), fit: true
+    };
+    S.offCount = 0; onPosRoute(); drawRoute();
+    if (reason !== 'auto') toast(`🧭 ${fmtDist(S.route.len)} Weg · ca. ${Math.max(1, Math.round(S.route.time / 60))} min`);
+  } catch (e) {
+    if (reason !== 'auto') toast('Routing: ' + e.message, 6000);
+  } finally { S.routeBusy = false; }
+}
+function onPosRoute() {
+  const p = S.pos, t = S.target;
+  if (S.set.routing && t && p && !S.route && !S.routeBusy && Date.now() - S.routeTs > 30000) { requestRoute('auto'); return; }
+  const R = activeRoute();
+  if (!R || !p) { S.steer = null; return; }
+  const loc = R.loc = routeLocate(R.pts, R.cum, p.lat, p.lon);
+  const total = R.cum[R.cum.length - 1];
+  R.rest = Math.max(0, total - loc.along) + R.gap;
+  R.offLim = Math.max(30, (p.acc || 10) * 1.5);
+  if (loc.off > R.offLim) { if (++S.offCount >= 2 && Date.now() - S.routeTs > 20000) requestRoute('auto'); } else S.offCount = 0;
+  // letzte Meter: Luftlinie zum Ziel (die Route endet am nächsten Weg)
+  R.final = total - loc.along < 30 || haversine(p.lat, p.lon, t.lat, t.lon) < 40;
+  if (R.final) S.steer = null;
+  else { const q = routePointAt(R.pts, R.cum, loc.along + S.set.lookahead); S.steer = { lat: q[0], lon: q[1] }; }
+  R.next = null;
+  for (const m of R.man) if (m.i > loc.i) { R.next = { txt: m.txt, d: Math.max(0, R.cum[m.i] - loc.along) }; break; }
+}
+function routeText(R, dist, brg) {
+  if (R.loc && R.loc.off > R.offLim) return `⚠️ ${fmtDist(R.loc.off)} neben der Route – berechne neu …`;
+  if (R.final) return `Letztes Stück Luftlinie: ${compassName(brg)} ${Math.round(brg)}°, ${fmtDist(dist)}`;
+  if (R.next) return (R.next.d < 15 ? 'Jetzt: ' : `In ${fmtDist(R.next.d)}: `) + R.next.txt;
+  return 'Der Route folgen';
+}
+function toggleRouting() {
+  S.set.routing = !S.set.routing; saveSettings(); updateButtons();
+  if (S.set.routing) { if (!S.target) toast('🧭 Routing an – erst ein Ziel wählen'); else requestRoute('user'); }
+  else { S.route = null; S.steer = null; drawRoute(); toast('Routing aus – Luftlinie'); }
+}
+function drawRoute() {
+  if (!S.map) return;
+  const R = activeRoute();
+  S.L.route.setLatLngs(R ? R.pts : []);
+  if (R && R.fit) { R.fit = false; S.map.fitBounds(window.L.latLngBounds(R.pts.concat([[S.target.lat, S.target.lon]])), { padding: [40, 40], maxZoom: 18 }); S.follow = false; $('#bFollow').hidden = false; }
 }
 function targetCache(geocode) {
   const c = S.caches.get(geocode); if (!c) return;
@@ -539,6 +651,7 @@ function startGps() {
     const first = !S.pos;
     S.pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, heading: p.coords.heading, speed: p.coords.speed, ts: p.timestamp };
     if (first) drawCacheMarkers();
+    onPosRoute();
   }, e => toast('GPS: ' + e.message), { enableHighAccuracy: true, maximumAge: 1000, timeout: 30000 });
 }
 
@@ -628,6 +741,7 @@ async function keepAwake() {
 }
 function updateButtons() {
   $('#bTorch').classList.toggle('on', S.torch);
+  $('#bRoute').classList.toggle('on', !!S.set.routing);
   const m = S.modeLock || 'auto';
   $('#bMode').innerHTML = m === 'auto' ? '🔄<small>Auto</small>' : m === 'cam' ? '📷<small>Kamera</small>' : '🗺️<small>Karte</small>';
 }
@@ -653,11 +767,13 @@ function initMap() {
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(S.map);
   S.L.caches = L.layerGroup().addTo(S.map);
   S.L.zones = L.layerGroup().addTo(S.map);
+  S.L.route = L.polyline([], { color: '#3d8bff', weight: 6, opacity: 0.85 }).addTo(S.map);
   S.L.line = L.polyline([], { color: '#ffdc00', weight: 3, dashArray: '6 8' }).addTo(S.map);
+  S.L.steer = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, fillColor: '#3d8bff', fillOpacity: 1, interactive: false });
   S.L.acc = L.circle([0, 0], { radius: 1, weight: 1, color: '#39cccc', fillOpacity: 0.1 }).addTo(S.map);
   S.L.me = L.marker([0, 0], { icon: L.divIcon({ className: 'me', html: '<div class="meArrow"></div>', iconSize: [34, 34] }), interactive: false }).addTo(S.map);
   S.map.on('dragstart', () => { S.follow = false; $('#bFollow').hidden = false; });
-  drawCacheMarkers();
+  drawCacheMarkers(); drawRoute();
 }
 function drawCacheMarkers() {
   if (!S.map) return;
@@ -685,7 +801,13 @@ function updateMap(dist, heading) {
   S.L.me.setLatLng(ll); S.L.acc.setLatLng(ll).setRadius(S.pos.acc || 1);
   const a = S.L.me.getElement && S.L.me.getElement();
   if (a && heading != null) a.firstChild.style.transform = `rotate(${heading}deg)`;
-  S.L.line.setLatLngs(S.target ? [ll, [S.target.lat, S.target.lon]] : []);
+  const R = activeRoute();
+  if (R && S.L.route.getLatLngs().length !== R.pts.length) drawRoute();
+  if (!R && S.L.route.getLatLngs().length) drawRoute();
+  // gelb gestrichelt: Luftlinie – mit Route nur das Reststück vom Wegende zum Ziel
+  const tl = S.target ? [S.target.lat, S.target.lon] : null;
+  S.L.line.setLatLngs(!tl ? [] : R ? (R.gap > 3 ? [R.pts[R.pts.length - 1], tl] : []) : [ll, tl]);
+  if (S.steer) S.L.steer.setLatLng([S.steer.lat, S.steer.lon]).addTo(S.map); else S.L.steer.remove();
   if (S.follow) S.map.panTo(ll, { animate: false });
 }
 
@@ -704,27 +826,33 @@ function frame(now) {
     $('#marker').hidden = true; $('#edge').hidden = true; $('#near').hidden = true; return;
   }
   const dist = haversine(p.lat, p.lon, t.lat, t.lon), brg = bearing(p.lat, p.lon, t.lat, t.lon);
-  $('#dist').textContent = fmtDist(dist); $('#acc').textContent = '±' + Math.round(p.acc) + ' m';
-  const rel = head != null ? wrap180(brg - head) : null;
-  $('#dir').textContent = `${compassName(brg)} ${Math.round(brg)}°` + (rel != null ? (Math.abs(rel) < 8 ? ' · geradeaus' : rel > 0 ? ` · ${Math.round(rel)}° rechts` : ` · ${Math.round(-rel)}° links`) : '');
-  $('#needle').style.transform = `rotate(${rel != null ? rel : brg}deg)`;
+  // mit Route zielen Nadel und Markierung auf einen Punkt ein Stück voraus auf dem Weg
+  const R = activeRoute(), aim = R && S.steer ? S.steer : t;
+  const adist = aim === t ? dist : haversine(p.lat, p.lon, aim.lat, aim.lon), abrg = aim === t ? brg : bearing(p.lat, p.lon, aim.lat, aim.lon);
+  $('#dist').textContent = fmtDist(R ? R.rest : dist); $('#acc').textContent = '±' + Math.round(p.acc) + ' m';
+  const rel = head != null ? wrap180(abrg - head) : null;
+  $('#dir').textContent = R ? routeText(R, dist, brg)
+    : `${compassName(brg)} ${Math.round(brg)}°` + (rel != null ? (Math.abs(rel) < 8 ? ' · geradeaus' : rel > 0 ? ` · ${Math.round(rel)}° rechts` : ` · ${Math.round(-rel)}° links`) : '');
+  $('#rinfo').textContent = R ? `🧭 Weg · Luftlinie ${fmtDist(dist)} · ca. ${Math.max(1, Math.round(R.time * (R.rest / Math.max(R.len, 1)) / 60))} min${R.gap > 15 ? ` · Weg endet ${fmtDist(R.gap)} vor dem Ziel` : ''}`
+    : S.set.routing ? (S.routeBusy ? '🧭 Route wird berechnet …' : '🧭 keine Route (☰ ⚙️ Routing prüfen)') : '';
+  $('#needle').style.transform = `rotate(${rel != null ? rel : abrg}deg)`;
   const nearR = Math.max(8, (p.acc || 10) * 1.3);
   const near = dist < nearR;
   $('#near').hidden = !near;
   if (near) $('#near').textContent = `Nahbereich – such im Umkreis von ca. ${Math.round(Math.max(dist, p.acc || 0))} m (GPS ±${Math.round(p.acc)} m)`;
   if (S.mode === 'cam' && S.cols) {
     const W = window.innerWidth, H = window.innerHeight;
-    const b = (brg - S.set.compassOffset) * D2R;
-    const vec = [dist * Math.sin(b), dist * Math.cos(b), -S.set.phoneH];
+    const b = (abrg - S.set.compassOffset) * D2R;
+    const vec = [adist * Math.sin(b), adist * Math.cos(b), -S.set.phoneH];
     const fov = W > H ? S.set.fovH * 1.6 : S.set.fovH; // grob: im Querformat ist das Bild breiter
     const pr = projectToScreen(sc, vec, Math.min(fov, 120), W, H);
     const mk = $('#marker'), ed = $('#edge');
     if (!near && !pr.behind && pr.inView) {
       mk.hidden = false; ed.hidden = true;
-      const size = Math.max(28, Math.min(130, 900 / Math.sqrt(dist + 4)));
+      const size = aim === t ? Math.max(28, Math.min(130, 900 / Math.sqrt(dist + 4))) : 56; // Wegmarke klein und gleich groß
       mk.style.transform = `translate(${pr.x}px,${pr.y}px)`;
       mk.firstElementChild.style.width = mk.firstElementChild.style.height = size + 'px';
-      $('#mLabel').textContent = fmtDist(dist); $('#mLabel').style.top = (size / 2) + 'px';
+      $('#mLabel').textContent = aim === t ? fmtDist(dist) : '🧭 Weg'; $('#mLabel').style.top = (size / 2) + 'px';
       const lock = Math.hypot(pr.x - W / 2, pr.y - H / 2) < Math.min(W, H) * 0.07;
       $('#cross').classList.toggle('lock', lock);
     } else {
@@ -940,6 +1068,10 @@ function showSettings() {
     ${f('smoothing', 'Glättung (0,05 ruhig … 1 direkt)', 'number', 'min="0.05" max="1" step="0.05"')}
     ${chk('autoMode', 'Automatisch: senkrecht = Kamera, waagerecht = Karte')}
     ${chk('keepAwake', 'Bildschirm anlassen')}
+    <h4>Routing (Valhalla)</h4>
+    ${f('routeUrl', 'Routing-Adresse: ./api/route.php (über deinen Server) oder direkt https://…/ (Valhalla mit HTTPS)')}
+    <label class="f"><span>Unterwegs</span><select data-k="routeCosting"><option value="pedestrian">zu Fuß</option><option value="bicycle">Fahrrad</option><option value="motor_scooter">Roller</option><option value="auto">Auto</option></select></label>
+    ${f('lookahead', 'Markierung so weit voraus auf dem Weg (m)', 'number', 'min="10" max="80" step="5"')}
     <h4>Daten</h4>
     ${f('maxLogs', 'Logs pro Cache', 'number', 'min="5" max="200" step="5"')}
     <h4>KI-Auswertung</h4>
@@ -951,7 +1083,7 @@ function showSettings() {
     ${f('ocRadius', 'Umkreis (km)', 'number', 'min="0.5" max="50" step="0.5"')}
     ${chk('hideFound', 'Gefundene OC-Caches nicht laden')}
     <p class="sub">CacheVisier ${APP_VERSION}</p>`, b => {
-    b.querySelector('select[data-k=sensor]').value = s.sensor;
+    b.querySelectorAll('select[data-k]').forEach(el => { el.value = s[el.dataset.k]; });
     b.querySelectorAll('[data-k]').forEach(el => {
       el.onchange = () => {
         const k = el.dataset.k;
@@ -959,6 +1091,7 @@ function showSettings() {
         if (k === 'ocUser') s.ocUuid = '';
         saveSettings();
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
+        if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };
     });
   });
@@ -1006,7 +1139,8 @@ async function init() {
   renderTop(); updateButtons();
   $('#bStart').onclick = () => run(start);
   $('#bList').onclick = () => showList();
-  $('#top').onclick = e => { if (e.target.id !== 'bList') showInfo(); };
+  $('#bRoute').onclick = toggleRouting;
+  $('#top').onclick = e => { if (!e.target.closest('button')) showInfo(); };
   $('#bHint').onclick = showInfo;
   $('#bLogs').onclick = showLogs;
   $('#bAi').onclick = showAi;
@@ -1029,5 +1163,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

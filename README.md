@@ -12,6 +12,7 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
 |---|---|
 | `index.html`, `style.css`, `app.js` | die App |
 | `sw.js`, `manifest.webmanifest`, `icon-*.png` | Installation, Offline-Betrieb, Empfang über „Teilen“ |
+| `api/inc.php`, `api/route.php` | gemeinsamer Start (Konfiguration, Token); Weiterleitung zu Valhalla |
 | `api/ki.php` | KI-Skript auf deinem Server. Die Schlüssel bleiben dort, die App kennt nur ein Token. |
 | `api/config.sample.php` | Vorlage für `api/config.php` |
 | `test/` | Tests: `node test/test.js`; Browser-Test `smoke.py` mit Playwright |
@@ -67,10 +68,25 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
 - **Suchzonen:** Die App sucht den Bezugspunkt in OpenStreetMap im Umkreis von 170 m um die Listing-Koordinaten und zeichnet daraus eine Suchzone. Jede Zone lässt sich als Ziel setzen.
 - Das sind Vorschläge, keine Koordinaten. Das Zitat zeigt, worauf sie beruhen.
 
+## Routing (Valhalla)
+
+- **🧭 oben rechts** schaltet das Routing an und aus.
+- **Mit Route:**
+  - Die Markierung im Kamerabild und die Nadel zeigen auf einen Punkt etwa 25 m voraus auf dem Weg.
+  - Unten stehen die nächste Anweisung („In 89 m: Links abbiegen auf …“), der Restweg und die Luftlinie.
+  - Auf der Karte erscheint die Route blau.
+  - Auf den letzten 30–40 m schaltet die App auf Luftlinie zum Ziel um. Die Route endet am nächsten Weg, der Cache liegt oft daneben.
+  - Liegst du zweimal hintereinander mehr als 30 m neben der Route, berechnet die App sie neu (höchstens alle 20 s).
+- **Adresse** (⚙️ → Routing):
+  - `./api/route.php` (Standard): Dein Server leitet an Valhalla weiter. In `config.php` dazu `const VALHALLA_URL = 'http://…:8002';` setzen, so wie der Server Valhalla erreicht. Das Skript prüft das Token und leitet nur `/route` mit geprüften Werten weiter.
+  - Oder direkt die Valhalla-Adresse (`https://…/`). Das geht nur, wenn Valhalla über HTTPS erreichbar ist. Die App fragt dann per GET `…/route?json=…`, ohne Preflight.
+- **Fortbewegung:** zu Fuß, Fahrrad, Roller oder Auto. Die Anweisungen kommen auf Deutsch von Valhalla.
+
 ## Bedienung
 
 | Knopf | Funktion |
 |---|---|
+| 🧭 (oben) | Routing an/aus |
 | 🔄 | Auto (senkrecht = Kamera, flach = Karte) → Kamera fest → Karte fest |
 | 🔦 | Lampe an/aus. Geht nur, wenn Handy und Browser das Licht über die Kamera schalten lassen (Diagnose zeigt es). |
 | 📸 | Foto zum aktuellen Ziel speichern, im Handy, nicht in der Galerie |

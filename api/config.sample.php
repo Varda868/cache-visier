@@ -4,6 +4,10 @@
 // Langes Zufallswort; dasselbe trägst du in der App unter Einstellungen → Token ein.
 const APP_TOKEN = 'HIER-EIN-LANGES-ZUFALLSWORT';
 
+// Routing: Adresse deines Valhalla-Servers (ohne /route), so wie dieser Server ihn erreicht.
+// Leer lassen, wenn die App Valhalla direkt über HTTPS anspricht.
+const VALHALLA_URL = '';
+
 // Höchstens so viele Auswertungen pro Tag (Bremse für Gratis-Kontingente)
 const DAILY_LIMIT = 300;
 

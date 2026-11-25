@@ -21,7 +21,8 @@ body[data-mode=map] #cam, body[data-mode=map] #view { display: none; }
 #top .tt { flex: 1; min-width: 0; }
 #tName { font-weight: 650; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tSub { color: var(--mut); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#bList { font-size: 22px; padding: 4px 14px; }
+#bList, #bRoute { font-size: 22px; padding: 4px 12px; }
+#bRoute.on { background: #3d8bff; border-color: #3d8bff; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; border: 1px solid rgba(0,0,0,.5); }
 
 #view { position: fixed; inset: 0; pointer-events: none; z-index: 400; }
@@ -53,6 +54,8 @@ body[data-mode=cam] #bFollow { display: none; }
 #dist { font-size: 32px; font-weight: 750; letter-spacing: -.5px; }
 #acc { color: var(--mut); }
 #dir { font-size: 15px; }
+#rinfo { font-size: 13px; color: #8fc1ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rinfo:empty { display: none; }
 #status { color: var(--mut); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 550; display: grid; grid-template-columns: repeat(7, 1fr);

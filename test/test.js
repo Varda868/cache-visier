@@ -73,6 +73,22 @@ t('nächstes OSM-Objekt (Knoten und Weg)', () => {
   assert.strictEqual(A.nearestOsm(els, 'amenity', 'bench', 48.37, 10.89), null);
 });
 
+// Route: Polyline6 kodieren/dekodieren, Position auf der Route
+function enc(pts) { let out = '', pl = 0, po = 0; const e = v => { v = v < 0 ? ~(v << 1) : v << 1; while (v >= 0x20) { out += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; } out += String.fromCharCode(v + 63); };
+  for (const [la, lo] of pts) { const a = Math.round(la * 1e6), b = Math.round(lo * 1e6); e(a - pl); e(b - po); pl = a; po = b; } return out; }
+t('Polyline6 hin und zurück', () => {
+  const pts = [[48.370012, 10.870034], [48.369987, 10.871234], [48.371111, 10.871222], [-33.9, -70.6]];
+  const d = A.decodePolyline(enc(pts)); assert.strictEqual(d.length, 4); d.forEach((p, i) => { near(p[0], pts[i][0], 1e-9); near(p[1], pts[i][1], 1e-9); });
+});
+t('Route: Position, Abstand, Punkt voraus', () => {
+  const pts = [[48.3700, 10.8700], [48.3700, 10.8712], [48.3711, 10.8712]], cum = A.routeCum(pts);
+  near(cum[1], A.haversine(48.37, 10.87, 48.37, 10.8712), 1e-9);
+  const m = A.routeLocate(pts, cum, 48.37005, 10.8706); // knapp nördlich vom ersten Segment, in der Mitte
+  assert.strictEqual(m.i, 0); near(m.off, 5.56, 0.05); near(m.along, cum[1] / 2, 0.5);
+  const q = A.routePointAt(pts, cum, cum[1] + 50); near(q[1], 10.8712, 1e-9); assert.ok(q[0] > 48.3700 && q[0] < 48.3711);
+  assert.deepStrictEqual(A.routePointAt(pts, cum, 1e9), pts[2]); assert.deepStrictEqual(A.routePointAt(pts, cum, -5), pts[0]);
+});
+
 // c:geo-Datenbank nachbauen
 let sqlite; try { sqlite = require('node:sqlite'); } catch (e) { sqlite = null; }
 if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
