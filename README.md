@@ -129,7 +129,12 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
   - Schnellknöpfe: 📍 Standort, ✅ Gefunden, 🎯 Ziel teilen, 🙋 Hilfe. Koordinaten in Nachrichten lassen sich als Ziel setzen, und die letzten Positionen anderer erscheinen auf der Karte (3 h).
   - Jedes Event wird geprüft (Signatur, Ablauf 24 h).
   - Der eigene Schlüssel wird im Handy erzeugt und bleibt dort (IndexedDB).
-  - Sprechfunk (Art 4420) erscheint nur als Hinweis; Hören und Sprechen bräuchten Codec2 aus der b:con-App.
+  - **🎙️ Sprechfunk** (Taste „Gedrückt halten zum Sprechen“ im 💬-Blatt), mit den unveränderten Bausteinen der b:con-App (`bcon/`, siehe `bcon/LIESMICH.md`):
+    - Codec2 1600 im Handy, Kompaktform mit Sprecher-Signatur „bcon-talk1“, Art 4420 in Teilen zu 1600 B, für den Kanal NIP-44-versiegelt.
+    - Höchstens 30 s je Durchsage, die letzten 5 s laufen sichtbar herunter.
+    - Eingehende Durchsagen (jünger als 3 min) spielen nacheinander ab, ältere per ▶. Die Sprecher-Signatur wird geprüft.
+    - Das Mikrofon ist nur offen, solange die Taste gedrückt ist.
+  - **📍 Live-Position** (⚙️, Standard aus): alle 30 s im Team- oder auch im Cache-Kanal. Als flüchtiges Event (Art 20442), das Relays nicht speichern, versiegelt. Mitcacher erscheinen auf der Karte und im 💬-Blatt mit Entfernung („👥 LISA 34 m“).
   - Krypto ohne fremde Bibliothek (`nostr.js`), geprüft gegen die offiziellen Testvektoren von BIP-340, RFC 8439 und NIP-44 und gegen eine Python-Referenz.
 - **Attribute und Ausrüstung:**
   - Attribute kommen aus c:geo (`cg_attributes`), GPX und Opencaching.

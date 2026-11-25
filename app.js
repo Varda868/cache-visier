@@ -594,7 +594,7 @@ const DEFAULTS = {
   apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
-  talkOn: false, talkName: '', talkPw: '', talkCache: true, talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
+  talkOn: false, talkName: '', talkPw: '', talkCache: true, talkLive: 'aus', talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
   gear_flashlight: true, gear_uv: false, gear_pen: true, gear_tweezers: true, gear_magnet: false, gear_mirror: false, gear_gloves: true,
   gear_special_tool: false, gear_water: false, gear_measure: false, gear_ladder: false, gear_pole: false, gear_wading: false,
   gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false, gear_boat: false, gear_scuba: false, gear_swimming: false,
@@ -603,7 +603,7 @@ const DEFAULTS = {
 };
 const S = {
   set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false,
-  talk: { msgs: [], seen: new Set(), unread: 0, pos: {} },
+  talk: { msgs: [], seen: new Set(), unread: 0, pos: {}, voice: new Map(), queue: [], slot: 0 },
   ann: {}, annMan: {}, lockPrev: false, lockTs: 0, spots: [], peil: null, pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
   target: null, mode: 'cam', modeLock: null, stream: null, track: null, torch: false, dir: null,
   route: null, steer: null, routeBusy: false, routeTs: 0, offCount: 0,
@@ -1779,7 +1779,7 @@ function showPeilung(pre) {
 
 /* ---------- b:con talk über öffentliche Nostr-Relays (Chat Art 4423, Sprechfunk Art 4420 nur als Hinweis) ---------- */
 const NX = () => window.CVNostr;
-function talkRufname() { return (S.set.talkName || 'CACHER').toUpperCase().replace(/[^A-Z0-9\-/.]/g, '').slice(0, 6) || 'CACHER'; }
+function talkRufname() { return (S.set.talkName || 'CACHER').toUpperCase().replace(/[^A-Z0-9\-/.]/g, '').slice(0, 9) || 'CACHER'; } // Base40, wie b:con
 async function talkKey() {
   let h = await idbGet('meta', 'nostrSk').catch(() => null);
   if (!h) { const b = NX().randomBytes(32); b[0] &= 0x7f; h = NX().hex(b); await idbPut('meta', h, 'nostrSk'); } // bleibt nur im Handy
@@ -1802,7 +1802,7 @@ async function talkChannels() {
 async function talkSubscribe() {
   const T = S.talk; if (!T.pool) return;
   const ch = await talkChannels(), since = Math.floor(Date.now() / 1000) - 86400, filters = [{ kinds: [4420, 4423], '#p': [T.pk], since }];
-  if (ch.length) filters.unshift({ kinds: [4420, 4423], '#L': ['bcon.gruppe'], '#l': ch.map(c => c.kennung), since });
+  if (ch.length) filters.unshift({ kinds: [4420, 4423, LIVE_KIND], '#L': ['bcon.gruppe'], '#l': ch.map(c => c.kennung), since });
   T.pool.sub('cvtalk', filters);
   talkRenderStatus();
 }
@@ -1822,7 +1822,7 @@ async function initTalk() {
 }
 async function talkEvent(ev) {
   const T = S.talk, X = NX();
-  if (!ev || T.seen.has(ev.id) || (ev.kind !== 4423 && ev.kind !== 4420)) return;
+  if (!ev || T.seen.has(ev.id) || (ev.kind !== 4423 && ev.kind !== 4420 && ev.kind !== LIVE_KIND)) return;
   T.seen.add(ev.id);
   if (!(await X.verifyEvent(ev))) return;                                  // gefälschte oder kaputte Events weg
   const exp = +X.tagVal(ev, 'expiration'); if (exp && exp < Date.now() / 1000) return;
@@ -1831,8 +1831,20 @@ async function talkEvent(ev) {
   if (gk && !chan) return;                                                 // fremde Gruppe oder anderer Cache
   if (!gk && !toMe) return;                                                // offene Nachrichten gibt es hier nicht
   const msg = { id: ev.id, pk: ev.pubkey, ts: ev.created_at * 1000, eigen, chan: chan ? chan.icon + ' ' + chan.name : '✉️ privat', kind: ev.kind };
-  if (ev.kind === 4420) { msg.name = ev.pubkey.slice(0, 6).toUpperCase(); msg.text = '🎙️ Sprechfunk (hörbar in der b:con-App)'; }
-  else {
+  if (ev.kind === LIVE_KIND) { if (chan && !eigen) await liveEmpfang(ev, chan); return; }
+  if (ev.kind === 4420) {
+    // Sprechfunk wie in der b:con-App: Teile sammeln, Kompaktform prüfen (Sprecher-Signatur), dann abspielen
+    const B = await bconVoice().catch(() => null); if (!B) return;
+    const i = await B.netz.teilLesen(ev, T.sk, new Map((T.channels || []).map(c => [c.kennung, c]))); if (!i) return;
+    const k = await B.sammler.teil(i); if (!k) return;
+    const d = await B.netz.kompaktLesen(k); if (!d || (!d.signatur && !d.fehlend)) return;
+    const echt = d.signatur || ev.pubkey === d.kopf.schluessel, nb = (B.SF.CODECS[d.kopf.codec] ? 8 : 8);
+    const sek = Math.max(1, Math.round(d.pakete.reduce((n, p) => n + (p.length ? p.length / (d.kopf.codec === 8 ? 4 : nb) : 10), 0) * (B.SF.CODECS[d.kopf.codec]?.ms || 40) / 1000));
+    msg.id = 'v' + i.kennung; msg.name = echt ? (d.kopf.name || d.kopf.schluessel.slice(0, 6)) : d.kopf.schluessel.slice(0, 6) + ' (ungeprüft)';
+    msg.text = `🎙️ Sprachnachricht · ${sek} s`; msg.voice = i.kennung;
+    T.voice.set(i.kennung, d);
+    if (!eigen && msg.ts > Date.now() - 3 * 60000) { T.queue.push(d); voiceWeiter(); }
+  } else {
     try {
       const raw = chan ? await X.nip44Decrypt(chan.ck, ev.content) : await X.nip44Decrypt(await X.conversationKey(T.sk, ev.pubkey), ev.content);
       const j = JSON.parse(raw); msg.name = String(j.n || '').slice(0, 12) || ev.pubkey.slice(0, 6); msg.text = String(j.t || '').slice(0, 500);
@@ -1862,9 +1874,10 @@ function talkRenderList() {
     if (!m.chan) return '';
     const c = parseCoord(m.text);
     return `<li class="tmsg${m.eigen ? ' me' : ''}"><div class="th"><span class="chan">${esc(m.chan || '')}</span> <b>${esc(m.name)}</b> <small>${new Date(m.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></div>
-      <div class="tt">${esc(m.text)}</div>${c ? `<button data-tgo="${i}">🎯 als Ziel</button>` : ''}</li>`;
+      <div class="tt">${esc(m.text)}</div>${c ? `<button data-tgo="${i}">🎯 als Ziel</button>` : ''}${m.voice && S.talk.voice.has(m.voice) ? `<button data-play="${esc(m.voice)}">▶ abspielen</button>` : ''}</li>`;
   }).join('') || '<li class="empty">Noch keine Nachrichten der letzten 24 h.</li>';
   el.querySelectorAll('[data-tgo]').forEach(b => { b.onclick = () => { const m = list[+b.dataset.tgo], c = parseCoord(m.text); setTarget({ kind: 'wpt', geocode: '', lat: c.lat, lon: c.lon, label: '💬 ' + m.name, name: m.name }); }; });
+  el.querySelectorAll('[data-play]').forEach(b => { b.onclick = () => { const d = S.talk.voice.get(b.dataset.play); if (d) { S.talk.queue.push(d); voiceWeiter(); } }; });
   if (!list.length) el.innerHTML = '<li class="empty">Noch keine Nachrichten in deinen Kanälen (letzte 24 h).</li>';
   el.scrollTop = el.scrollHeight;
 }
@@ -1890,17 +1903,23 @@ async function showTalk() {
   await talkChannels();
   const c = curCache(), here = S.pos ? `📍 ${fmtCoord(S.pos.lat, S.pos.lon)} ±${Math.round(S.pos.acc)} m` : '';
   openSheet('💬 b:con talk', `
-    <p class="sub" id="talkStatus"></p>
+    <p class="sub" id="talkStatus"></p><p class="sub" id="talkMates"></p>
     <div class="seg" id="tChan">${(T.channels || []).map(c => `<label><input type="radio" name="tch" value="${c.id}" ${c.id === T.sendTo ? 'checked' : ''}>${c.icon} ${esc(c.name)}</label>`).join('')}</div>
     <ul class="tlist" id="talkList"></ul>
+    <button id="tPtt" class="ptt">🎙️ Gedrückt halten zum Sprechen</button>
     <div class="tsend"><input id="tText" type="text" maxlength="500" placeholder="Nachricht …"><button id="tSend">➤</button></div>
     <div class="tools"><button data-q="pos">📍 Standort</button>${c ? '<button data-q="found">✅ Gefunden</button>' : ''}${S.target ? '<button data-q="ziel">🎯 Ziel teilen</button>' : ''}<button data-q="help">🙋 Hilfe</button></div>
     <p class="sub">🧩 = alle, die diesen Cache als Ziel haben und b:con talk an. Den Kanal kann lesen, wer den Code kennt – also nicht geheim. 🔒 Team = nur mit eurem Passwort. Über öffentliche Nostr-Relays, verfällt nach 24 h. b:con ist kein Notrufsystem.</p>`, b => {
-    talkRenderStatus(); talkRenderList();
+    talkRenderStatus(); talkRenderList(); talkRenderMates();
     const send = txt => run(async () => { const n = await talkSend(txt); b.querySelector('#tText').value = ''; toast(`💬 gesendet (${n} Relay${n > 1 ? 's' : ''})`); });
     b.querySelector('#tSend').onclick = () => send(b.querySelector('#tText').value);
     b.querySelector('#tText').onkeydown = e => { if (e.key === 'Enter') send(e.target.value); };
     b.querySelectorAll('input[name=tch]').forEach(r => { r.onchange = () => { S.talk.sendTo = r.value; }; });
+    const ptt = b.querySelector('#tPtt');
+    ptt.oncontextmenu = e => e.preventDefault();
+    ptt.onpointerdown = e => { e.preventDefault(); try { ptt.setPointerCapture(e.pointerId); } catch (x) { /* egal */ } run(pttStart); };
+    ptt.onpointerup = ptt.onpointercancel = () => run(pttStop);
+    bconVoice().then(B => B.SF.audio()).catch(() => {}); // Ton freischalten (Nutzergeste)
     b.querySelectorAll('[data-q]').forEach(q => {
       q.onclick = () => {
         const k = q.dataset.q;
@@ -1912,6 +1931,114 @@ async function showTalk() {
     });
   });
 }
+/* ---------- Sprechfunk über Nostr mit den Bausteinen der b:con-App (bcon/: Codec2, Sprechfunk, netz.js) ---------- */
+const LIVE_KIND = 20442; // flüchtig (Relays speichern nicht): Live-Position im Kanal, versiegelt
+let _bc = null;
+function bconVoice() {
+  if (!_bc) _bc = (async () => {
+    if (typeof Codec2Modul === 'undefined') await loadScript('bcon/codec2.js');
+    if (typeof Sprechfunk === 'undefined') await loadScript('bcon/sprechfunk.js');
+    const netz = await import('./bcon/netz.js');
+    await Sprechfunk.laden();
+    return { netz, SF: Sprechfunk, emp: new Sprechfunk.Empfaenger(), mic: new Sprechfunk.Mikrofon(), sammler: new netz.Sammler() };
+  })().catch(e => { _bc = null; throw e; });
+  return _bc;
+}
+async function pttStart() {
+  const T = S.talk;
+  if (T.rec || T.recStarting) return;
+  const chan = (T.channels || []).find(c => c.id === T.sendTo);
+  if (!chan) throw new Error('Kein Kanal: Cache als Ziel wählen oder Team-Passwort setzen');
+  T.recStarting = true;
+  try {
+    const B = await bconVoice(); await B.SF.audio();
+    const codec = new B.SF.Codec(3), zeit = Math.floor(Date.now() / 1000);  // Codec2 1600 (Kennung 3), Standard für Gruppen
+    const a = new B.netz.Aufnahme(T.sk, { codec: 3, flags: B.netz.mitPrio(0, 0), ziel: B.netz.ALLE, zeit, name: talkRufname(), region: '', gruppe: 0 }, codec.nb);
+    T.rec = { a, codec, chan, t0: Date.now(), zeit };
+    B.mic.agc = true;
+    B.mic.beiRahmen = pcm => { if (T.rec) T.rec.a.rahmen(T.rec.codec.kodieren(pcm)); };
+    B.mic.beiPegel = p => { const el = $('#tPtt'); if (el && T.rec) el.style.setProperty('--pegel', Math.min(1, p * 3).toFixed(2)); };
+    await B.mic.oeffnen(codec.n);
+    B.SF.signal('frei'); buzz([30]);
+    const el = $('#tPtt'); if (el) el.classList.add('on');
+    T.recTimer = setInterval(() => {
+      if (!T.rec) return;
+      const s = (Date.now() - T.rec.t0) / 1000, e2 = $('#tPtt');
+      if (e2) e2.textContent = s > 25 ? `🎙️ noch ${Math.ceil(30 - s)} s` : `🎙️ spricht … ${Math.floor(s)} s`;
+      if (s >= 30) run(pttStop);                                         // höchstens 30 s an Gruppen (b:con-Regel)
+    }, 200);
+  } finally { T.recStarting = false; }
+}
+async function pttStop() {
+  const T = S.talk;
+  if (T.recStarting) { await new Promise(r => setTimeout(r, 300)); }
+  const r = T.rec; if (!r) return;
+  T.rec = null; clearInterval(T.recTimer);
+  const el = $('#tPtt'); if (el) { el.classList.remove('on'); el.textContent = '🎙️ Gedrückt halten zum Sprechen'; }
+  const B = await bconVoice();
+  B.mic.beiRahmen = null; B.mic.schliessen(); B.SF.signal('los'); r.codec.frei();
+  const k = await r.a.fertig();
+  if (!k || Date.now() - r.t0 < 400) return toast('Zu kurz – Taste länger halten');
+  const X = NX(), kenn = await B.netz.kennung(k), anzahl = Math.ceil(k.length / 1600), ablauf = String(r.zeit + 86400);
+  let ok = 0;
+  for (let t = 0; t < anzahl; t++) {
+    const tags = [['talk', kenn, String(t), String(anzahl)], ['alt', 'b:con-Sprechfunk'], ['L', 'bcon.gruppe'], ['l', r.chan.kennung, 'bcon.gruppe'],
+      ['gruppe', r.chan.kennung], ['expiration', ablauf]];
+    const ev = await X.finishEvent({ kind: 4420, created_at: r.zeit, tags, content: await B.netz.versiegeln(r.chan.ck, k.subarray(t * 1600, (t + 1) * 1600)) }, T.sk);
+    const res = await T.pool.publish(ev); ok = Math.max(ok, res.filter(x => x.ok).length);
+    await talkEvent(ev);                                                  // eigenes Echo in die Liste
+  }
+  toast(ok ? `🎙️ gesendet (${Math.round((Date.now() - r.t0) / 1000)} s, ${ok} Relay${ok > 1 ? 's' : ''})` : '🎙️ kein Relay hat angenommen');
+}
+async function voiceWeiter() {
+  const T = S.talk; if (T.playing) return;
+  T.playing = true;
+  while (T.queue.length) await voicePlay(T.queue.shift()).catch(e => console.warn('Wiedergabe', e));
+  T.playing = false;
+}
+async function voicePlay(d) {
+  const B = await bconVoice(), c = B.SF.CODECS[d.kopf.codec]; if (!c) return;
+  await B.SF.audio();
+  const slot = 200 + (S.talk.slot++ % 50);
+  B.emp.beginnen(slot, d.kopf.codec, { weg: 'nostr', sprecher: d.kopf.schluessel });
+  await B.emp.slots.get(slot)?.bereit;
+  const nb = B.emp.slots.get(slot)?.codec?.nb || 8;
+  let ms = 0;
+  d.pakete.forEach((p, i) => {
+    const dauer = (p.length ? p.length / nb : 10) * c.ms, b = new Uint8Array(5 + p.length);
+    b.set([0x50, slot, i + 1, dauer & 255, dauer >> 8]); b.set(p, 5);
+    B.emp.paket(b); ms += dauer;
+  });
+  await new Promise(r => setTimeout(r, ms + 300));
+  B.emp.beenden(slot);
+}
+/* Live-Position: alle 30 s im gewählten Kanal (Cache oder Team), nur solange b:con talk an und die Einstellung es erlaubt */
+async function liveEmpfang(ev, chan) {
+  try {
+    const j = JSON.parse(await NX().nip44Decrypt(chan.ck, ev.content));
+    if (!isFinite(j.lat) || !isFinite(j.lon)) return;
+    S.talk.pos[ev.pubkey] = { name: String(j.n || ev.pubkey.slice(0, 6)).slice(0, 9), lat: +j.lat, lon: +j.lon, acc: +j.acc || 0, ts: ev.created_at * 1000, live: true, chan: chan.icon + ' ' + chan.name };
+    drawTalkPos(); talkRenderMates();
+  } catch (e) { /* nicht lesbar */ }
+}
+async function liveSenden() {
+  const T = S.talk, m = S.set.talkLive;
+  if (!S.set.talkOn || m === 'aus' || !T.pool || !S.pos || document.hidden) return;
+  const ch = (T.channels || []).filter(c => m === 'cache+team' || c.id === 'team');
+  for (const c of ch) {
+    const body = JSON.stringify({ n: talkRufname(), lat: +S.pos.lat.toFixed(6), lon: +S.pos.lon.toFixed(6), acc: Math.round(S.pos.acc || 0) });
+    const ev = await NX().finishEvent({ kind: LIVE_KIND, tags: [['L', 'bcon.gruppe'], ['l', c.kennung, 'bcon.gruppe'], ['gruppe', c.kennung]], content: await NX().nip44Encrypt(c.ck, body) }, T.sk);
+    T.pool.publish(ev, 3000);
+  }
+}
+setInterval(() => run(liveSenden), 30000);
+window.CVT = { liveSenden, bconVoice }; // für Tests und die Browser-Konsole
+function talkRenderMates() {
+  const el = $('#talkMates'); if (!el) return;
+  const now = Date.now(), list = Object.values(S.talk.pos).filter(p => now - p.ts < 5 * 60000);
+  el.innerHTML = list.length ? '👥 ' + list.map(p => `${esc(p.name)}${S.pos ? ' ' + fmtDist(haversine(S.pos.lat, S.pos.lon, p.lat, p.lon)) : ''}${p.live ? '' : ' (gemeldet)'}`).join(' · ') : '';
+}
+
 function drawTalkPos() {
   if (!S.map || !S.L.talk) return;
   S.L.talk.clearLayers();
@@ -2132,6 +2259,7 @@ function showSettings() {
     ${f('talkName', 'Rufname (bis 6 Zeichen A–Z, 0–9)')}
     ${chk('talkCache', '🧩 Kanal zum aktuellen Cache (GC/OC-Code): alle, die ihn als Ziel haben, sind dabei')}
     ${f('talkPw', '🔒 Team-Passwort (optional, eigener Kanal)', 'password')}
+    <label class="f"><span>📍 Live-Position alle 30 s teilen</span><select data-k="talkLive"><option value="aus">aus</option><option value="team">nur im Team-Kanal</option><option value="cache+team">im Cache- und Team-Kanal</option></select></label>
     ${f('talkRelays', 'Relays (Leerzeichen getrennt)')}
     <h4>Meine Ausrüstung</h4>
     <p class="sub">Erkannt aus Attributen und aus Hint, Listing und KI-Suchhilfe. ❗ = ohne das geht es nicht, 🎒 = einpacken.</p>

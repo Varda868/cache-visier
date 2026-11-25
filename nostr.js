@@ -169,7 +169,7 @@
     return t;
   }
   async function groupKey(pw) {
-    const k = await subtle.importKey('raw', utf8(pw), 'PBKDF2', false, ['deriveBits']);
+    const k = await subtle.importKey('raw', utf8(String(pw).normalize('NFC')), 'PBKDF2', false, ['deriveBits']); // wie bcon-app
     const ck = new Uint8Array(await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: utf8('bcon-gruppe1'), iterations: 200000 }, k, 256));
     return { ck, kennung: hex((await sha256(cat(utf8('bcon-gruppe-kennung'), ck))).slice(0, 8)) };
   }
