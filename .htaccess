@@ -1,0 +1,10 @@
+# CacheVisier: App-Dateien bei jedem Aufruf beim Server nachfragen (ETag), sonst bleiben Handys nach Updates auf alten Versionen
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|css|json|webmanifest|php)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <FilesMatch "^sw\.js$">
+    Header set Service-Worker-Allowed "./"
+  </FilesMatch>
+</IfModule>
+AddType application/manifest+json .webmanifest

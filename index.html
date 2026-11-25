@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>CacheVisier</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="app.js" defer></script>
+</head>
+<body data-mode="cam">
+
+<video id="cam" playsinline muted autoplay></video>
+<div id="map"></div>
+
+<header id="top">
+  <div class="tt">
+    <div id="tName">Kein Ziel – ☰ Liste öffnen</div>
+    <div id="tSub"></div>
+  </div>
+  <button id="bList" aria-label="Liste">☰</button>
+</header>
+
+<div id="view">
+  <svg id="cross" viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="18" />
+    <line x1="50" y1="8" x2="50" y2="36" /><line x1="50" y1="64" x2="50" y2="92" />
+    <line x1="8" y1="50" x2="36" y2="50" /><line x1="64" y1="50" x2="92" y2="50" />
+    <circle cx="50" cy="50" r="1.6" class="c" />
+  </svg>
+  <div id="marker" hidden><div class="ring"></div><div id="mLabel"></div></div>
+  <div id="edge" hidden><svg class="arr" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 2 L36 36 L20 27 L4 36 Z"/></svg></div>
+  <div id="near" hidden></div>
+</div>
+
+<button id="bFollow" hidden>⌖ Mitte</button>
+
+<section id="info">
+  <div id="compass"><svg id="needle" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3 L33 33 L20 26 L7 33 Z"/></svg></div>
+  <div class="iv">
+    <div><span id="dist">GPS …</span> <span id="acc"></span></div>
+    <div id="dir"></div>
+    <div id="status"></div>
+  </div>
+</section>
+
+<nav id="bar">
+  <button id="bMode">🔄<small>Auto</small></button>
+  <button id="bTorch">🔦<small>Lampe</small></button>
+  <button id="bPhoto">📸<small>Foto</small></button>
+  <button id="bHint">💡<small>Hint</small></button>
+  <button id="bLogs">📜<small>Logs</small></button>
+  <button id="bAi">🤖<small>KI</small></button>
+  <button id="bLog">✍️<small>Log</small></button>
+</nav>
+
+<div id="start">
+  <div class="box">
+    <h1>CacheVisier</h1>
+    <p>Senkrecht halten: Kamera mit Fadenkreuz.<br>Flach halten: Karte.</p>
+    <p class="sub">Beim Start fragt der Browser nach Kamera, Standort und Bewegungssensoren.</p>
+    <button id="bStart">▶ Starten</button>
+  </div>
+</div>
+
+<div id="sheet" hidden>
+  <div class="sh">
+    <b id="sheetTitle"></b>
+    <button id="sheetClose" aria-label="Schließen">✕</button>
+  </div>
+  <div id="sheetBody"></div>
+</div>
+
+<div id="flash"></div>
+<div id="toast"></div>
+</body>
+</html>
