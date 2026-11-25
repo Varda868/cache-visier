@@ -289,7 +289,7 @@ const ATTRS = [ // Schlüssel, Symbol, Text, Ausrüstung?, GC-Nummer, Muster
   ['climbing', '🧗', 'Klettern (schwierig)', true, 10, /^climbing|difficult.?climb|klettern/i],
   ['boat', '🚣', 'Boot nötig', true, 4, /boat|boot/i],
   ['scuba', '🤿', 'Tauchausrüstung nötig', true, 5, /scuba|tauch/i],
-  ['wading', '🥾', 'Waten, nasse Füße', true, 11, /wading|waten|nasse f/i],
+  ['wading', '🥾', 'Waten / Wathose', true, 11, /wading|waten|wathose|nasse f/i],
   ['swimming', '🏊', 'Schwimmen', true, 12, /swimming|schwimm/i],
   ['night', '🌙', 'Nachtcache', false, 52, /night.?cache|nachtcache|nur nachts/i],
   ['night_rec', '🌃', 'nachts empfohlen', false, 14, /^night(_|$)|recommended at night|nachts/i],
@@ -323,7 +323,41 @@ function mapAttr(raw, gcId, inc) {
   return { key: a[0], icon: a[1], label: (neg ? 'nicht: ' : '') + a[2], tool: a[3] && !neg, yes: !neg };
 }
 function toolAttrs(c) { return (c.attrs || []).filter(a => a.tool); }
-function missingGear(c, set) { return toolAttrs(c).filter(a => set['gear_' + a.key] === false); }
+/* Werkzeug, für das es kein Attribut gibt, aus Hint, Listing und KI-Suchhilfe erkennen */
+const TEXT_TOOLS = [
+  ['ladder', '🪜', 'Leiter', /\b(trittleiter|klappleiter|stehleiter|leiter)\b/i],
+  ['pole', '🎣', 'Teleskopstange / Angel', /teleskop(stange)?|\bangel(rute|haken)?\b|stange mit haken|greifzange/i],
+  ['wading', '🥾', 'Waten / Wathose', /wathose|gummistiefel|watstiefel/i]
+];
+function textTools(c, ai) {
+  const parts = [c.hint, c.desc, c.note];
+  if (ai) (ai.suchhilfe || []).forEach(h => { if (h.kategorie === 'werkzeug' || h.kategorie === 'zugang') parts.push(h.hinweis, h.zitat); });
+  const txt = parts.filter(Boolean).map(htmlText).join('\n');
+  return TEXT_TOOLS.filter(t => t[3].test(txt)).map(t => ({ key: t[0], icon: t[1], label: t[2] + ' (aus Text)', tool: true, yes: true, derived: true }));
+}
+function toolsOf(c, ai) {
+  const a = toolAttrs(c);
+  return a.concat(textTools(c, ai).filter(d => !a.some(x => x.key === d.key)));
+}
+function missingGear(c, set, ai) { return toolsOf(c, ai).filter(a => set['gear_' + a.key] === false); }
+
+/* Tour: Reihenfolge durch Caches (nächster Nachbar + 2-opt), damit man nicht hin und her läuft */
+function planTour(start, pts, loop) {
+  const n = pts.length; if (!n) return [];
+  const all = [start].concat(pts), D = all.map(a => all.map(b => haversine(a.lat, a.lon, b.lat, b.lon)));
+  const order = [0], left = new Set(pts.map((_, i) => i + 1));
+  while (left.size) { const last = order[order.length - 1]; let best = null; for (const j of left) if (best == null || D[last][j] < D[last][best]) best = j; order.push(best); left.delete(best); }
+  const len = o => { let s = 0; for (let i = 1; i < o.length; i++) s += D[o[i - 1]][o[i]]; return loop ? s + D[o[o.length - 1]][0] : s; };
+  let cur = len(order), better = true, guard = 0;
+  while (better && guard++ < 50) {
+    better = false;
+    for (let i = 1; i < order.length - 1; i++) for (let k = i + 1; k < order.length; k++) {
+      const cand = order.slice(0, i).concat(order.slice(i, k + 1).reverse(), order.slice(k + 1));
+      const l = len(cand); if (l < cur - 0.5) { order.splice(0, order.length, ...cand); cur = l; better = true; }
+    }
+  }
+  return order.slice(1).map(i => i - 1);
+}
 
 /* --- Reflektoren (Firetacks) im Kamerabild: kleine, sehr helle Flecken vor dunklem Grund --- */
 function findBrightSpots(px, w, h, o) {
@@ -517,7 +551,8 @@ const DEFAULTS = {
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
   gear_flashlight: true, gear_uv: false, gear_special_tool: false, gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false,
-  gear_boat: false, gear_scuba: false, gear_wading: false, gear_swimming: false,
+  gear_boat: false, gear_scuba: false, gear_wading: false, gear_swimming: false, gear_ladder: false, gear_pole: false,
+  tourRadius: 2000, tourLoop: false,
   routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
@@ -589,6 +624,7 @@ async function loadAll() {
   for (const c of await idbAll('caches')) S.caches.set(c.geocode, c);
   for (const a of await idbAll('ai')) S.ai.set(a.geocode, a);
   S.dir = await idbGet('meta', 'dir').catch(() => null) || null;
+  S.tour = await idbGet('meta', 'tour').catch(() => null) || null;
   const t = await idbGet('meta', 'target').catch(() => null);
   if (t && (t.kind !== 'cache' || S.caches.has(t.geocode))) S.target = t;
 }
@@ -868,15 +904,15 @@ function drawRoute() {
 function targetCache(geocode) {
   const c = S.caches.get(geocode); if (!c) return;
   setTarget({ kind: 'cache', geocode, lat: c.lat, lon: c.lon, name: c.name });
-  const miss = missingGear(c, S.set), night = (c.attrs || []).some(a => a.yes && (a.key === 'night' || a.key === 'night_rec'));
+  const miss = missingGear(c, S.set, S.ai.get(c.geocode)), night = (c.attrs || []).some(a => a.yes && (a.key === 'night' || a.key === 'night_rec'));
   if (miss.length) toast('❗ Ausrüstung: ' + miss.map(a => a.icon + ' ' + a.label).join(', '), 5000);
   else if (night && !S.set.night) toast('🌙 Nachtcache – Nachtmodus mit 🌙 oben', 4000);
 }
 function curCache() { return S.target ? S.caches.get(S.target.geocode) : null; }
 /* Ausrüstung: Symbole der nötigen Werkzeuge, ❗ wenn dir etwas fehlt */
 function gearBadge(c) {
-  const t = toolAttrs(c); if (!t.length) return '';
-  const miss = missingGear(c, S.set);
+  const t = toolsOf(c, S.ai.get(c.geocode)); if (!t.length) return '';
+  const miss = missingGear(c, S.set, S.ai.get(c.geocode));
   return ' · ' + t.map(a => a.icon).join('') + (miss.length ? ' ❗' : '');
 }
 function renderTop() {
@@ -888,7 +924,7 @@ function renderTop() {
   $('#tName').textContent = name;
   if (c) {
     const ti = TYPE_INFO[c.type] || TYPE_INFO.other;
-    $('#tSub').innerHTML = `<span class="dot" style="background:${ti[1]}"></span>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${c.disabled ? ' · ⛔ deaktiviert' : ''}${gearBadge(c)}`;
+    $('#tSub').innerHTML = `<span class="dot" style="background:${ti[1]}"></span>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${c.disabled ? ' · ⛔ deaktiviert' : ''}${gearBadge(c)}${tourPos(c.geocode) >= 0 ? ` · 🗺️ ${tourPos(c.geocode) + 1}/${S.tour.ids.length}` : ''}`;
   } else $('#tSub').textContent = fmtCoord(t.lat, t.lon);
 }
 
@@ -1030,13 +1066,14 @@ function initMap() {
   S.L.zones = L.layerGroup().addTo(S.map);
   S.L.route = L.polyline([], { color: '#3d8bff', weight: 6, opacity: 0.85 }).addTo(S.map);
   S.L.line = L.polyline([], { color: '#ffdc00', weight: 3, dashArray: '6 8' }).addTo(S.map);
+  S.L.tour = L.layerGroup().addTo(S.map);
   S.L.steer = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, fillColor: '#3d8bff', fillOpacity: 1, interactive: false });
   S.L.acc = L.circle([0, 0], { radius: 1, weight: 1, color: '#39cccc', fillOpacity: 0.1 }).addTo(S.map);
   S.L.me = L.marker([0, 0], { icon: L.divIcon({ className: 'me', html: '<div class="meArrow"></div>', iconSize: [34, 34] }), interactive: false }).addTo(S.map);
   S.map.on('dragstart', () => { S.follow = false; $('#bFollow').hidden = false; });
   S.map.on('zoomstart', () => { if (!S.progZoom) S.zoomPause = performance.now() + 20000; });
   S.map.on('zoomend', () => { S.progZoom = false; });
-  drawCacheMarkers(); drawRoute();
+  drawCacheMarkers(); drawRoute(); drawTour();
 }
 function drawCacheMarkers() {
   if (!S.map) return;
@@ -1174,7 +1211,7 @@ function showList(filter = '') {
   openSheet(`Caches (${S.caches.size})`, `
     <div class="tools">
       <button id="lFolder">📁 c:geo-Backup laden</button><button id="lFile">📄 Datei wählen</button>
-      <button id="lOc">🟢 OC in der Nähe</button><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button>
+      <button id="lOc">🟢 OC in der Nähe</button><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button><button id="lTour">🗺️ Tour</button>
       <button id="lSet">⚙️ Einstellungen</button><button id="lDiag">🩺 Diagnose</button>
     </div>
     <input id="lFilter" type="search" placeholder="Suchen (Name oder Code)" value="${esc(filter)}">
@@ -1184,6 +1221,7 @@ function showList(filter = '') {
     b.querySelector('#lOc').onclick = () => run(loadOcNearby);
     b.querySelector('#lPeil').onclick = () => showPeilung();
     b.querySelector('#lOff').onclick = () => run(showOffline);
+    b.querySelector('#lTour').onclick = () => showTour();
     b.querySelector('#lAi').onclick = () => run(aiAll);
     b.querySelector('#lSet').onclick = showSettings;
     b.querySelector('#lDiag').onclick = showDiag;
@@ -1199,7 +1237,7 @@ function showInfo() {
   openSheet(c.name, `
     <p class="sub">${esc(c.geocode)} · ${(TYPE_INFO[c.type] || TYPE_INFO.other)[0]} · D${c.d || '?'}/T${c.t || '?'} ${c.size ? '· ' + esc(c.size) : ''} ${c.owner ? '· von ' + esc(c.owner) : ''}</p>
     <p class="coord">${fmtCoord(c.lat, c.lon)}${c.corrected ? ' (korrigiert)' : ''}</p>
-    ${toolAttrs(c).length ? `<h4>🧰 Ausrüstung</h4><ul class="list">${toolAttrs(c).map(a => { const has = S.set['gear_' + a.key] !== false; return `<li class="gear ${has ? 'ok' : 'miss'}">${a.icon} <b>${esc(a.label)}</b> <small>${has ? '✓ hast du' : '✗ fehlt laut Einstellungen'}</small></li>`; }).join('')}</ul>` : ''}
+    ${toolsOf(c, S.ai.get(c.geocode)).length ? `<h4>🧰 Ausrüstung</h4><ul class="list">${toolsOf(c, S.ai.get(c.geocode)).map(a => { const has = S.set['gear_' + a.key] !== false; return `<li class="gear ${has ? 'ok' : 'miss'}">${a.icon} <b>${esc(a.label)}</b> <small>${has ? '✓ hast du' : '✗ fehlt laut Einstellungen'}</small></li>`; }).join('')}</ul>` : ''}
     ${(c.attrs || []).filter(a => !a.tool).length ? `<h4>Attribute</h4><div class="chips">${(c.attrs || []).filter(a => !a.tool).map(a => `<span class="chip${a.yes ? '' : ' neg'}">${a.icon} ${esc(a.label)}</span>`).join('')}</div>` : ''}
     <h4>Hint</h4>
     <div id="hint" class="hint blur">${esc(htmlText(c.hint) || '– kein Hint –')}</div>
@@ -1719,28 +1757,77 @@ async function showOffline() {
 }
 
 /* ---------- Gefunden & weiter ---------- */
-function nearestUnfound(exclude) {
+function tourCandidate(c, exclude) {
+  if (c.found || c.disabled || c.archived || c.geocode === exclude) return false;
+  if (c.type === 'mystery' && !c.corrected) return false;                          // ungelöstes Rätsel
+  if (S.set.skipGear && missingGear(c, S.set, S.ai.get(c.geocode)).length) return false; // Ausrüstung fehlt
+  return true;
+}
+function makeTour(exclude) {
   const p = S.pos || S.target; if (!p) return null;
-  let best = null;
-  for (const c of S.caches.values()) {
-    if (c.found || c.disabled || c.archived || c.geocode === exclude) continue;
-    if (c.type === 'mystery' && !c.corrected) continue;          // ungelöste Rätsel: Koordinaten sind nicht das Versteck
-    if (S.set.skipGear && missingGear(c, S.set).length) continue; // Ausrüstung fehlt (z. B. Klettern, Boot)
-    const d = haversine(p.lat, p.lon, c.lat, c.lon);
-    if (!best || d < best.d) best = { c, d };
-  }
-  return best;
+  let list = [...S.caches.values()].filter(c => tourCandidate(c, exclude) && haversine(p.lat, p.lon, c.lat, c.lon) <= S.set.tourRadius);
+  list = list.sort((a, b) => haversine(p.lat, p.lon, a.lat, a.lon) - haversine(p.lat, p.lon, b.lat, b.lon)).slice(0, 40);
+  const order = planTour({ lat: p.lat, lon: p.lon }, list, S.set.tourLoop);
+  S.tour = { ids: order.map(i => list[i].geocode), start: { lat: p.lat, lon: p.lon }, loop: S.set.tourLoop, ts: Date.now() };
+  idbPut('meta', S.tour, 'tour').catch(() => {});
+  drawTour();
+  return S.tour;
+}
+function tourNext(exclude) {
+  if (!S.tour || !S.tour.ids.some(g => S.caches.has(g) && tourCandidate(S.caches.get(g), exclude))) makeTour(exclude);
+  const g = S.tour && S.tour.ids.find(id => S.caches.has(id) && tourCandidate(S.caches.get(id), exclude));
+  return g ? S.caches.get(g) : null;
+}
+function tourPos(g) { return S.tour ? S.tour.ids.indexOf(g) : -1; }
+function drawTour() {
+  if (!S.map || !S.L.tour) return;
+  S.L.tour.clearLayers();
+  if (!S.tour) return;
+  const pts = S.tour.ids.map(g => S.caches.get(g)).filter(Boolean);
+  const line = [[S.tour.start.lat, S.tour.start.lon]].concat(pts.map(c => [c.lat, c.lon]));
+  if (S.tour.loop) line.push(line[0]);
+  window.L.polyline(line, { color: '#b10dc9', weight: 3, opacity: 0.8, dashArray: '2 8' }).addTo(S.L.tour);
+  pts.forEach((c, i) => window.L.marker([c.lat, c.lon], { interactive: false, icon: window.L.divIcon({ className: 'tourNr' + (c.found ? ' done' : ''), html: String(i + 1), iconSize: [20, 20], iconAnchor: [-6, 22] }) }).addTo(S.L.tour));
+}
+function showTour() {
+  const p = S.pos || S.target;
+  if (!S.tour) makeTour();
+  if (!S.tour) return toast('Erst GPS oder ein Ziel');
+  const pts = S.tour.ids.map(g => S.caches.get(g)).filter(Boolean);
+  let prev = S.tour.start, sum = 0;
+  const rows = pts.map((c, i) => {
+    const d = haversine(prev.lat, prev.lon, c.lat, c.lon); sum += d; prev = c;
+    const ti = TYPE_INFO[c.type] || TYPE_INFO.other;
+    return `<li class="row${c.found ? ' found' : ''}" data-g="${esc(c.geocode)}"><span class="tnr">${i + 1}</span><div class="grow"><b>${esc(c.name)}</b><small>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${gearBadge(c)}</small></div><span class="dd">+${fmtDist(d)}<br><small>${fmtDist(sum)}</small></span></li>`;
+  }).join('');
+  if (S.tour.loop && pts.length) sum += haversine(prev.lat, prev.lon, S.tour.start.lat, S.tour.start.lon);
+  openSheet(`🗺️ Tour (${pts.length})`, `
+    <p class="sub">Reihenfolge ohne Hin und Her (Luftlinie, Kreuzungen entfernt). Gesamt ca. ${fmtDist(sum)} Luftlinie${S.tour.loop ? ', zurück zum Start' : ''} – zu Fuß wird es mehr.</p>
+    <div class="two"><label class="f"><span>Umkreis</span><select id="tR"><option value="1000">1 km</option><option value="2000">2 km</option><option value="3000">3 km</option><option value="5000">5 km</option></select></label>
+      <label class="f c"><input type="checkbox" id="tL" ${S.set.tourLoop ? 'checked' : ''}><span>Rundtour</span></label></div>
+    <div class="tools"><button id="tNew">🔄 Neu planen ab hier</button><button id="tGo">▶ Erster Cache als Ziel</button><button id="tOff">✕ Tour beenden</button></div>
+    <ul class="list">${rows || '<li class="empty">Keine passenden Caches im Umkreis.</li>'}</ul>`, b => {
+    b.querySelector('#tR').value = String(S.set.tourRadius);
+    b.querySelector('#tR').onchange = e => { S.set.tourRadius = +e.target.value; saveSettings(); makeTour(); showTour(); };
+    b.querySelector('#tL').onchange = e => { S.set.tourLoop = e.target.checked; saveSettings(); makeTour(); showTour(); };
+    b.querySelector('#tNew').onclick = () => { makeTour(); showTour(); };
+    b.querySelector('#tGo').onclick = () => { const c = tourNext(); if (c) targetCache(c.geocode); };
+    b.querySelector('#tOff').onclick = () => { S.tour = null; idbDel('meta', 'tour').catch(() => {}); drawTour(); renderTop(); closeSheet(); toast('Tour beendet'); };
+    b.querySelectorAll('li.row').forEach(li => { li.onclick = () => targetCache(li.dataset.g); });
+  });
 }
 async function foundAndNext(c, text, photoIds) {
   await idbPut('mylogs', { geocode: c.geocode, name: c.name, type: 'found', text, ts: Date.now(), lat: S.pos && S.pos.lat, lon: S.pos && S.pos.lon, photoIds });
   c.found = true; await idbPut('caches', c); S.caches.set(c.geocode, c);
   buzz([60, 60, 200]);
-  const nx = nearestUnfound(c.geocode);
-  if (!nx) { closeSheet(); drawCacheMarkers(); return toast('✅ Gefunden gespeichert – kein weiterer ungefundener Cache geladen'); }
-  targetCache(nx.c.geocode);
-  const ti = (TYPE_INFO[nx.c.type] || TYPE_INFO.other)[0];
-  toast(`✅ Gefunden gespeichert · weiter: ${nx.c.name} (${ti}, ${fmtDist(nx.d)})`, 5000);
-  say(`Weiter zu ${nx.c.name}, ${ti}, ${sayDist(Math.round(nx.d / 10) * 10)}`);
+  const nx = tourNext(c.geocode);
+  drawTour();
+  if (!nx) { closeSheet(); drawCacheMarkers(); return toast('✅ Gefunden gespeichert – kein weiterer passender Cache im Umkreis'); }
+  targetCache(nx.geocode);
+  const ti = (TYPE_INFO[nx.type] || TYPE_INFO.other)[0], d = S.pos ? haversine(S.pos.lat, S.pos.lon, nx.lat, nx.lon) : 0;
+  const k = tourPos(nx.geocode) + 1, n = S.tour ? S.tour.ids.length : 0;
+  toast(`✅ Gefunden gespeichert · Tour ${k}/${n}: ${nx.name} (${ti}, ${fmtDist(d)})`, 5000);
+  say(`Weiter zu ${nx.name}, ${ti}, ${sayDist(Math.round(d / 10) * 10)}`);
 }
 
 /* ---------- Offline-Log + Fotos ---------- */
@@ -1815,6 +1902,7 @@ function showSettings() {
     ${f('declination', 'Missweisung für Kompasswerte (°, Ost +; Standard 4 – für deinen Ort prüfen)', 'number', 'min="-30" max="30" step="0.1"')}
     <h4>Meine Ausrüstung</h4>
     ${ATTRS.filter(a => a[3]).map(a => chk('gear_' + a[0], a[1] + ' ' + a[2].replace(/ nötig$/, ''))).join('')}
+    ${TEXT_TOOLS.filter(t => t[0] !== 'wading').map(t => chk('gear_' + t[0], t[1] + ' ' + t[2] + ' <small>(erkannt aus Hint, Listing, KI)</small>')).join('')}
     ${chk('skipGear', '„Gefunden & weiter“ überspringt Caches, für die Ausrüstung fehlt')}
     <h4>Routing (Valhalla)</h4>
     ${f('routeUrl', 'Routing-Adresse: ./api/route.php (über deinen Server) oder direkt https://…/ (Valhalla mit HTTPS)')}
@@ -1915,5 +2003,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, findBrightSpots, colorName, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, findBrightSpots, colorName, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

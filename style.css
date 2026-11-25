@@ -194,3 +194,7 @@ body[data-mode=map] #spots { display: none; }
 .gear { padding: 6px 2px; border-bottom: 1px solid var(--line); }
 .gear.miss b { color: var(--bad); }
 .gear.ok small { color: var(--ok); }
+
+.tourNr { background: #b10dc9; color: #fff; border-radius: 50%; font: bold 12px/20px system-ui; text-align: center; border: 1px solid #fff; }
+.tourNr.done { opacity: .45; }
+.tnr { width: 24px; height: 24px; flex: none; border-radius: 50%; background: #b10dc9; color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 13px; }

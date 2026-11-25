@@ -110,12 +110,19 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
   - **Mit der Kamera peilen:** Fadenkreuz auf das Ziel, die Richtung kommt vom Kompass. Die Entfernung schätzt die App aus der Neigung, wenn du auf den Fuß des Ziels zielst (Handyhöhe einstellbar, ungenau über 50 m).
   - Ergebnis als Ziel, zum Kopieren oder als Wegpunkt beim Cache.
 - **✅ Gefunden & weiter** (✍️ Log):
-  - Speichert den Fund-Log und springt zum nächsten ungefundenen Cache, mit Route, wenn sie an ist.
+  - Speichert den Fund-Log und nimmt den nächsten Cache der **Tour**, mit Route, wenn sie an ist.
+  - Gibt es noch keine Tour, plant die App eine.
+- **🗺️ Tour** (☰):
+  - Plant die Reihenfolge durch die passenden Caches im Umkreis (1–5 km, höchstens 40): erst der nächste Nachbar, dann werden Kreuzungen und Umwege entfernt (2-opt). So läuft man nicht hin und her.
+  - Wahlweise als Rundtour zurück zum Start.
+  - Auf der Karte lila mit Nummern, in der Kopfzeile „🗺️ 3/12“.
+  - Gerechnet wird mit Luftlinie; Wege, Flüsse und Zäune kennt die Planung nicht.
   - Übersprungen werden ungelöste Mysterys (ohne korrigierte Koordinaten) und Caches, für die dir laut Einstellungen Ausrüstung fehlt.
 - **Attribute und Ausrüstung:**
   - Attribute kommen aus c:geo (`cg_attributes`), GPX und Opencaching.
   - Werkzeug-Attribute (🔦 Taschenlampe, 🟣 UV, 🔧 Spezialwerkzeug, 🧗 Klettern, 🚣 Boot, 🤿 Tauchen, 🥾 Waten …) stehen in Kopfzeile, Liste und Infoblatt; ❗ heißt, dir fehlt etwas.
   - Unter ⚙️ → „Meine Ausrüstung“ einstellen.
+  - Für Werkzeug ohne eigenes Attribut (🪜 Leiter, 🎣 Teleskopstange/Angel, Wathose) sucht die App in Hint, Listing und der KI-Suchhilfe nach diesen Wörtern. So erkannte Werkzeuge stehen mit „(aus Text)“ da.
   - Die KI bekommt die Attribute mit und soll sie mit den Logs konkretisieren, z. B. welches Spezialwerkzeug genau.
 - **📦 Offline** (☰):
   - Lädt die App-Bausteine (Karte, SQLite) in den Speicher, wertet die Logs der ungefundenen Caches im Umkreis aus und liest auf Wunsch die Multi-Stationen.

@@ -132,6 +132,29 @@ t('Attribute zuordnen', () => {
   assert.deepStrictEqual(A.missingGear(c, { gear_flashlight: true, gear_boat: false }).map(a => a.key), ['boat']);
 });
 
+t('Werkzeug aus Text erkennen', () => {
+  assert.deepStrictEqual(A.textTools({ hint: 'Ohne Leiter wird es schwer' }).map(x => x.key), ['ladder']);
+  assert.deepStrictEqual(A.textTools({ hint: 'Der Teamleiter grüßt' }), []);
+  assert.deepStrictEqual(A.textTools({ desc: '<p>Hängt im Baum, Angel mitnehmen</p>' }).map(x => x.key), ['pole']);
+  const ai = { suchhilfe: [{ kategorie: 'werkzeug', hinweis: 'Teleskopstange', zitat: 'mit Stange geangelt' }] };
+  assert.deepStrictEqual(A.textTools({}, ai).map(x => x.key), ['pole']);
+  const c = { attrs: [A.mapAttr('wading_yes')], hint: 'Wathose!' };
+  assert.deepStrictEqual(A.toolsOf(c).map(x => x.key), ['wading']);   // nicht doppelt
+  assert.deepStrictEqual(A.missingGear({ hint: 'Leiter' }, { gear_ladder: false }).map(x => x.key), ['ladder']);
+});
+t('Tour ohne Hin und Her', () => {
+  const s = { lat: 48.37, lon: 10.89 }, at = m => ({ lat: 48.37, lon: 10.89 + m / 74000 });
+  // Zickzack: nächster Nachbar springt links-rechts
+  const pts = [at(100), at(-110), at(220), at(-230), at(340)];
+  const len = o => { let p = s, l = 0; o.forEach(i => { l += A.haversine(p.lat, p.lon, pts[i].lat, pts[i].lon); p = pts[i]; }); return l; };
+  const tour = A.planTour(s, pts, false);
+  assert.strictEqual(tour.length, 5); assert.deepStrictEqual([...tour].sort(), [0, 1, 2, 3, 4]);
+  assert.ok(len(tour) < len([0, 1, 2, 3, 4]) * 0.75, 'Tour soll deutlich kürzer sein als Zickzack: ' + len(tour));
+  // Punkte auf einer Linie, gemischt: Reihenfolge muss monoton sein
+  const line = [at(300), at(100), at(500), at(200), at(400)];
+  assert.deepStrictEqual(A.planTour(s, line, false).map(i => Math.round((line[i].lon - 10.89) * 74000)), [100, 200, 300, 400, 500]);
+});
+
 // Multi: Formeln und Koordinaten
 t('Ausdrücke rechnen', () => {
   assert.strictEqual(A.evalExpr('A*2+B', { A: 3, B: '4' }).value, 10);
