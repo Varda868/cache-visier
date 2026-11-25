@@ -270,6 +270,19 @@ function nearestOsm(els, key, value, lat, lon) {
   return best;
 }
 
+/* --- Sonnenhöhe in Grad (Näherung, auf ca. 1° genau) – für „Karte dunkel: automatisch“ --- */
+function sunElevation(lat, lon, date) {
+  const d = date.getTime() / 86400000 - 10957.5;            // Tage seit J2000.0
+  const g = ((357.529 + 0.98560028 * d) % 360) * D2R;
+  const q = (280.459 + 0.98564736 * d) % 360;
+  const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R;
+  const e = (23.439 - 0.00000036 * d) * D2R;
+  const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)), dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const gmst = ((18.697374558 + 24.06570982441908 * d) % 24 + 24) % 24;
+  const ha = (gmst * 15 + lon) * D2R - ra;
+  return Math.asin(Math.sin(lat * D2R) * Math.sin(dec) + Math.cos(lat * D2R) * Math.cos(dec) * Math.cos(ha)) / D2R;
+}
+
 /* --- Multi: Ausdrücke rechnen, Koordinaten-Vorlagen füllen, Stationen auflösen --- */
 function quersumme(n) { return String(Math.abs(Math.trunc(n))).split('').reduce((a, d) => a + +d, 0); }
 function evalExpr(src, vars) {
@@ -402,7 +415,7 @@ const $ = s => document.querySelector(s);
 const DEFAULTS = {
   fovH: 50, phoneH: 1.4, compassOffset: 0, sensor: 'auto', autoMode: true, maxLogs: 40,
   apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
-  keepAwake: true, smoothing: 0.25,
+  keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
@@ -744,6 +757,7 @@ function drawRoute() {
   if (!S.map) return;
   const R = activeRoute();
   S.L.route.setLatLngs(R ? R.pts : []);
+  if (R && R.fit && S.set.autoZoom && S.follow) R.fit = false; // Autozoom übernimmt
   if (R && R.fit) { R.fit = false; S.map.fitBounds(window.L.latLngBounds(R.pts.concat([[S.target.lat, S.target.lon]])), { padding: [40, 40], maxZoom: 18 }); S.follow = false; $('#bFollow').hidden = false; }
 }
 function targetCache(geocode) {
@@ -906,6 +920,8 @@ function initMap() {
   S.L.acc = L.circle([0, 0], { radius: 1, weight: 1, color: '#39cccc', fillOpacity: 0.1 }).addTo(S.map);
   S.L.me = L.marker([0, 0], { icon: L.divIcon({ className: 'me', html: '<div class="meArrow"></div>', iconSize: [34, 34] }), interactive: false }).addTo(S.map);
   S.map.on('dragstart', () => { S.follow = false; $('#bFollow').hidden = false; });
+  S.map.on('zoomstart', () => { if (!S.progZoom) S.zoomPause = performance.now() + 20000; });
+  S.map.on('zoomend', () => { S.progZoom = false; });
   drawCacheMarkers(); drawRoute();
 }
 function drawCacheMarkers() {
@@ -941,7 +957,29 @@ function updateMap(dist, heading) {
   const tl = S.target ? [S.target.lat, S.target.lon] : null;
   S.L.line.setLatLngs(!tl ? [] : R ? (R.gap > 3 ? [R.pts[R.pts.length - 1], tl] : []) : [ll, tl]);
   if (S.steer) S.L.steer.setLatLng([S.steer.lat, S.steer.lon]).addTo(S.map); else S.L.steer.remove();
-  if (S.follow) S.map.panTo(ll, { animate: false });
+  if (S.follow) { if (!autoZoom(ll)) S.map.panTo(ll, { animate: false }); }
+}
+/* Autozoom: ich in der Mitte, das nächste Wichtige noch im Bild – mit Route die nächste Abbiegung, sonst das Ziel */
+function autoZoom(ll) {
+  const now = performance.now();
+  if (!S.set.autoZoom || !S.target || now < (S.zoomPause || 0) || now - (S.lastZoom || 0) < 2500) return false;
+  const R = activeRoute();
+  let pt = [S.target.lat, S.target.lon];
+  if (R && R.loc && !R.final && R.next && R.next.d < 400) pt = routePointAt(R.pts, R.cum, R.loc.along + R.next.d);
+  const d = haversine(ll[0], ll[1], pt[0], pt[1]);
+  const mirror = [2 * ll[0] - pt[0], 2 * ll[1] - pt[1]];            // gespiegelt, damit ich in der Mitte bleibe
+  let z = d < 25 ? 19 : S.map.getBoundsZoom(window.L.latLngBounds([pt, mirror]).pad(0.25), false);
+  const fast = S.pos && S.pos.speed > 6;                               // Rad/Auto: weiter raus
+  z = Math.max(13, Math.min(fast ? 17 : 19, Math.floor(z)));
+  if (z === S.map.getZoom()) return false;
+  S.progZoom = true; S.lastZoom = now;
+  S.map.setView(ll, z, { animate: true });
+  return true;
+}
+function applyMapDark() {
+  const m = S.set.mapDark, p = S.pos || S.target || { lat: 48.37, lon: 10.89 };
+  const on = m === 'on' || (m === 'auto' && sunElevation(p.lat, p.lon, new Date()) < -2);
+  document.body.classList.toggle('mapdark', on);
 }
 
 /* ---------- Hauptschleife: Anzeige ---------- */
@@ -1426,6 +1464,8 @@ function showSettings() {
     <label class="f"><span>Kompass-Quelle</span><select data-k="sensor"><option value="auto">Automatisch</option><option value="quat">Lagesensor (Quaternion)</option><option value="euler">Lagewinkel (deviceorientation)</option></select></label>
     ${f('smoothing', 'Glättung (0,05 ruhig … 1 direkt)', 'number', 'min="0.05" max="1" step="0.05"')}
     ${chk('autoMode', 'Automatisch: senkrecht = Kamera, waagerecht = Karte')}
+    <label class="f"><span>Karte dunkel</span><select data-k="mapDark"><option value="on">immer</option><option value="auto">nach Sonnenstand</option><option value="off">nie</option></select></label>
+    ${chk('autoZoom', 'Karte zoomt automatisch (Ziel bzw. nächste Abbiegung im Bild)')}
     ${chk('keepAwake', 'Bildschirm anlassen')}
     <h4>Routing (Valhalla)</h4>
     ${f('routeUrl', 'Routing-Adresse: ./api/route.php (über deinen Server) oder direkt https://…/ (Valhalla mit HTTPS)')}
@@ -1450,6 +1490,7 @@ function showSettings() {
         if (k === 'ocUser') s.ocUuid = '';
         saveSettings();
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
+        if (k === 'mapDark') applyMapDark();
         if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };
     });
@@ -1495,7 +1536,7 @@ async function start() {
 async function init() {
   document.body.dataset.mode = 'cam';
   await loadAll().catch(e => console.error(e));
-  renderTop(); updateButtons(); renderStage();
+  renderTop(); updateButtons(); renderStage(); applyMapDark(); setInterval(applyMapDark, 60000);
   $('#bStart').onclick = () => run(start);
   $('#bList').onclick = () => showList();
   $('#bRoute').onclick = toggleRouting;
@@ -1507,7 +1548,7 @@ async function init() {
   $('#bTorch').onclick = () => run(toggleTorch);
   $('#bPhoto').onclick = () => run(takePhoto);
   $('#bMode').onclick = cycleModeLock;
-  $('#bFollow').onclick = () => { S.follow = true; $('#bFollow').hidden = true; };
+  $('#bFollow').onclick = () => { S.follow = true; S.zoomPause = 0; $('#bFollow').hidden = true; };
   $('#sheetClose').onclick = closeSheet;
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.started) keepAwake(); });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW', e));
@@ -1522,5 +1563,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, htmlText, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, htmlText, sunElevation, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

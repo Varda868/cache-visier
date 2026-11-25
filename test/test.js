@@ -96,6 +96,12 @@ t('HTML aus Logs in Text', () => {
   assert.strictEqual(A.htmlText('<ul><li>eins</li><li>zwei</li></ul>'), '• eins\n• zwei');
 });
 
+t('Sonnenhöhe Augsburg', () => {
+  near(A.sunElevation(48.37, 10.89, new Date(Date.UTC(2026, 5, 21, 11, 16))), 65.1, 1.0);   // Mittag Sommeranfang
+  near(A.sunElevation(48.37, 10.89, new Date(Date.UTC(2026, 11, 21, 11, 15))), 18.2, 1.0);  // Mittag Winteranfang
+  assert.ok(A.sunElevation(48.37, 10.89, new Date(Date.UTC(2026, 10, 25, 20, 0))) < -30);   // Novemberabend
+});
+
 // Multi: Formeln und Koordinaten
 t('Ausdrücke rechnen', () => {
   assert.strictEqual(A.evalExpr('A*2+B', { A: 3, B: '4' }).value, 10);
