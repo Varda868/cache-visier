@@ -35,6 +35,15 @@ async def main():
         # Kurz vor dem Ziel -> Luftlinie
         await ctx.set_geolocation({'latitude': 48.37105, 'longitude': 10.87119, 'accuracy': 5}); await pg.wait_for_timeout(1500)
         print('Am Ende:', await pg.text_content('#dir'), '| Label:', await pg.text_content('#mLabel'))
+        # Server-Weg kaputt (401) -> Rückfall direkt auf FOSSGIS
+        await pg.evaluate("""(shape) => { const of = window.fetch; window._dc = 0; window.fetch = async (u, o) => { u = String(u);
+          if (u.includes('api/route.php')) return new Response('{"ok":false,"error":"Token falsch"}', {status: 401});
+          if (u.startsWith('https://valhalla1.openstreetmap.de/route?json=')) { window._dc++; return new Response(JSON.stringify({trip:{summary:{length:0.211,time:170}, legs:[{shape, maneuvers:[{instruction:'Direkt.', begin_shape_index:0}]}]}})); }
+          return of(u, o); }; }""", SHAPE)
+        await pg.evaluate('CV.route = null; CV.routeTs = 0')
+        await pg.click('#bList'); await pg.click('li.row'); await pg.wait_for_timeout(2500)
+        print('Rückfall: direkte Anfragen', await pg.evaluate('_dc'), '| Toast:', await pg.text_content('#toast'), '| Weg über:', await pg.evaluate('CV.route && CV.route.via'))
+        print('Label-Schriftgröße:', await pg.evaluate('getComputedStyle(document.querySelector("#mLabel")).fontSize'))
         await pg.click('#bRoute'); await pg.wait_for_timeout(200)
         print('Aus:', await pg.text_content('#dir'), '| Info leer:', (await pg.text_content('#rinfo')) == '')
         print('Fehler:', errs)

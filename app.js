@@ -565,6 +565,7 @@ let _routeTimer;
 function routeSoon() { clearTimeout(_routeTimer); _routeTimer = setTimeout(() => requestRoute('user'), 1500); }
 
 /* ---------- Routing (Valhalla) ---------- */
+const FOSSGIS = 'https://valhalla1.openstreetmap.de';
 function targetKey(t) { return t ? t.lat.toFixed(6) + ',' + t.lon.toFixed(6) : ''; }
 function activeRoute() { return S.set.routing && S.route && S.target && S.route.key === targetKey(S.target) ? S.route : null; }
 async function requestRoute(reason) {
@@ -576,21 +577,32 @@ async function requestRoute(reason) {
   S.routeBusy = true; S.routeTs = Date.now();
   const req = { locations: [{ lat: p.lat, lon: p.lon, type: 'break' }, { lat: t.lat, lon: t.lon, type: 'break' }],
     costing: S.set.routeCosting, directions_options: { units: 'kilometers', language: 'de-DE' } };
+  const direct = base => fetch(base.replace(/\/+$/, '') + '/route?json=' + encodeURIComponent(JSON.stringify(req)));
   try {
-    const r = /\.php(\?|$)/.test(u)
-      ? await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(req) })
-      : await fetch(u.replace(/\/+$/, '') + '/route?json=' + encodeURIComponent(JSON.stringify(req)));
-    const j = await r.json().catch(() => null);
+    let r, j, via = 'direkt';
+    if (/\.php(\?|$)/.test(u)) {
+      via = 'Server';
+      try {
+        r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(req) });
+        j = await r.json().catch(() => null);
+      } catch (e) { r = null; j = null; }
+      // Rückfall wie bei Scooterways: Server-Weg kaputt (kein Token, keine config, Valhalla nicht erreichbar) → direkt zu FOSSGIS.
+      // Nicht bei Drossel (429) und nicht, wenn Valhalla selbst „kein Weg“ meldet (error_code).
+      if (!r || (!r.ok && r.status !== 429 && !(j && j.error_code))) {
+        if (r && r.status === 401 && reason !== 'auto') toast('🧭 Token fehlt oder falsch – Route direkt über FOSSGIS', 4000);
+        r = await direct(FOSSGIS); j = await r.json().catch(() => null); via = 'direkt';
+      }
+    } else { r = await direct(u); j = await r.json().catch(() => null); }
     if (!r.ok || !j || !j.trip) throw new Error(j && (j.error || j.error_code) ? `${j.error || ''}${j.error_code ? ' (' + j.error_code + ')' : ''}` : 'HTTP ' + r.status);
     if (targetKey(S.target) !== targetKey(t)) return; // Ziel inzwischen gewechselt
     const leg = j.trip.legs[0], pts = decodePolyline(leg.shape, 6), last = pts[pts.length - 1];
     S.route = {
       key: targetKey(t), pts, cum: routeCum(pts), len: j.trip.summary.length * 1000, time: j.trip.summary.time,
       man: (leg.maneuvers || []).map(m => ({ txt: m.instruction || '', i: m.begin_shape_index })),
-      gap: haversine(last[0], last[1], t.lat, t.lon), fit: true
+      gap: haversine(last[0], last[1], t.lat, t.lon), fit: true, via
     };
     S.offCount = 0; onPosRoute(); drawRoute();
-    if (reason !== 'auto') toast(`🧭 ${fmtDist(S.route.len)} Weg · ca. ${Math.max(1, Math.round(S.route.time / 60))} min`);
+    if (reason !== 'auto') toast(`🧭 ${fmtDist(S.route.len)} Weg · ca. ${Math.max(1, Math.round(S.route.time / 60))} min (${via})`);
   } catch (e) {
     if (reason !== 'auto') toast('Routing: ' + e.message, 6000);
   } finally { S.routeBusy = false; }
