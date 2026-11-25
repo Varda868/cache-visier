@@ -212,3 +212,4 @@ body[data-mode=map] #spots { display: none; }
 .tsend { display: flex; gap: 6px; }
 .tsend input { flex: 1; }
 .talkPos { background: rgba(11,15,20,.85); color: #8fc1ff; border: 1px solid #3d8bff; border-radius: 8px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }
+.tmsg .chan { font-size: 12px; color: var(--mut); }

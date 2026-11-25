@@ -594,7 +594,7 @@ const DEFAULTS = {
   apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
-  talkOn: false, talkName: '', talkPlz: '', talkScope: 2, talkPw: '', talkOnlyGroup: true, talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
+  talkOn: false, talkName: '', talkPw: '', talkCache: true, talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
   gear_flashlight: true, gear_uv: false, gear_pen: true, gear_tweezers: true, gear_magnet: false, gear_mirror: false, gear_gloves: true,
   gear_special_tool: false, gear_water: false, gear_measure: false, gear_ladder: false, gear_pole: false, gear_wading: false,
   gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false, gear_boat: false, gear_scuba: false, gear_swimming: false,
@@ -865,6 +865,7 @@ function setTarget(t) {
   S.route = null; S.steer = null;
   renderTop(); drawCacheMarkers(); closeSheet(); renderStage();
   if (S.set.routing) routeSoon();
+  if (S.set.talkOn && S.talk.pool && S.talk.chanCode !== cacheCode()) { S.talk.chanCode = cacheCode(); run(talkSubscribe); }
 }
 /* schnelles Durchklicken von Zielen löst nur eine Anfrage aus (Rücksicht auf den öffentlichen Valhalla-Server) */
 let _routeTimer;
@@ -1784,7 +1785,27 @@ async function talkKey() {
   if (!h) { const b = NX().randomBytes(32); b[0] &= 0x7f; h = NX().hex(b); await idbPut('meta', h, 'nostrSk'); } // bleibt nur im Handy
   return NX().unhex(h);
 }
-function talkScopeLabel() { const plz = String(S.set.talkPlz || '').replace(/\D/g, ''); return plz.length >= 1 ? 'DE' + plz.slice(0, Math.max(1, Math.min(5, S.set.talkScope))) : ''; }
+/* Kanäle: 🧩 der aktuelle Cache (Passwort = GC/OC-Code, wie eine b:con-Gruppe) – alle, die diesen Cache als Ziel haben
+   und b:con talk an, sind automatisch drin –, dazu optional 🔒 Team (eigenes Passwort). Gefunden werden die Events über
+   das Label bcon.gruppe mit der Gruppenkennung (Relays filtern nur einbuchstabige Tags). */
+const _gk = new Map();
+async function chanKey(pw) { if (!_gk.has(pw)) _gk.set(pw, NX().groupKey(pw)); return _gk.get(pw); }
+function cacheCode() { const c = curCache(); return c && /^(GC|OC)[0-9A-Z]+$/i.test(c.geocode) ? c.geocode.toUpperCase() : ''; }
+async function talkChannels() {
+  const T = S.talk, ch = [];
+  if (S.set.talkCache && cacheCode()) { const g = await chanKey(cacheCode()); ch.push({ id: 'cache', name: cacheCode(), icon: '🧩', ...g }); }
+  if (S.set.talkPw) { const g = await chanKey(S.set.talkPw); ch.push({ id: 'team', name: 'Team', icon: '🔒', ...g }); }
+  T.channels = ch;
+  if (!ch.some(c => c.id === T.sendTo)) T.sendTo = ch.length ? ch[0].id : null;
+  return ch;
+}
+async function talkSubscribe() {
+  const T = S.talk; if (!T.pool) return;
+  const ch = await talkChannels(), since = Math.floor(Date.now() / 1000) - 86400, filters = [{ kinds: [4420, 4423], '#p': [T.pk], since }];
+  if (ch.length) filters.unshift({ kinds: [4420, 4423], '#L': ['bcon.gruppe'], '#l': ch.map(c => c.kennung), since });
+  T.pool.sub('cvtalk', filters);
+  talkRenderStatus();
+}
 async function initTalk() {
   const T = S.talk;
   $('#bTalk').hidden = !S.set.talkOn;
@@ -1792,14 +1813,10 @@ async function initTalk() {
   if (!S.set.talkOn) return;
   if (!NX()) return toast('b:con talk: Nostr-Baustein fehlt');
   T.sk = await talkKey(); T.pk = NX().hex(NX().getPublicKey(T.sk));
-  T.group = null;
-  if (S.set.talkPw) { toast('🔒 Gruppenschlüssel wird berechnet …', 3000); T.group = await NX().groupKey(S.set.talkPw); }
   if (!T.loaded) { T.loaded = true; const old = await idbGet('meta', 'talklog').catch(() => null); if (old) for (const m of old) { T.msgs.push(m); T.seen.add(m.id); } }
   const urls = String(S.set.talkRelays || '').split(/[\s,]+/).filter(u => /^wss:\/\//.test(u));
   T.pool = new (NX().Pool)(urls, ev => talkEvent(ev), st => { T.status = st; talkRenderStatus(); });
-  const since = Math.floor(Date.now() / 1000) - 86400, region = talkScopeLabel(), filters = [{ kinds: [4420, 4423], '#p': [T.pk], since }];
-  if (region) filters.unshift({ kinds: [4420, 4423], '#L': ['bcon.plz'], '#l': [region], since });
-  T.pool.sub('cvtalk', filters);
+  await talkSubscribe();
   T.pool.open();
   updateTalkBadge();
 }
@@ -1810,79 +1827,80 @@ async function talkEvent(ev) {
   if (!(await X.verifyEvent(ev))) return;                                  // gefälschte oder kaputte Events weg
   const exp = +X.tagVal(ev, 'expiration'); if (exp && exp < Date.now() / 1000) return;
   const gk = X.tagVal(ev, 'gruppe'), toMe = (ev.tags || []).some(t => t[0] === 'p' && t[1] === T.pk), eigen = ev.pubkey === T.pk;
-  let msg = { id: ev.id, pk: ev.pubkey, ts: ev.created_at * 1000, eigen, group: !!gk, priv: toMe && !gk, kind: ev.kind };
-  if (ev.kind === 4420) {
-    if (gk && (!T.group || gk !== T.group.kennung)) return;
-    msg.name = ev.pubkey.slice(0, 6).toUpperCase(); msg.text = '🎙️ Sprechfunk-Durchsage (hörbar in der b:con-App)';
-  } else {
-    let raw = ev.content;
+  const chan = gk ? (T.channels || []).find(c => c.kennung === gk) : null;
+  if (gk && !chan) return;                                                 // fremde Gruppe oder anderer Cache
+  if (!gk && !toMe) return;                                                // offene Nachrichten gibt es hier nicht
+  const msg = { id: ev.id, pk: ev.pubkey, ts: ev.created_at * 1000, eigen, chan: chan ? chan.icon + ' ' + chan.name : '✉️ privat', kind: ev.kind };
+  if (ev.kind === 4420) { msg.name = ev.pubkey.slice(0, 6).toUpperCase(); msg.text = '🎙️ Sprechfunk (hörbar in der b:con-App)'; }
+  else {
     try {
-      if (gk) { if (!T.group || gk !== T.group.kennung) return; raw = await X.nip44Decrypt(T.group.ck, raw); }
-      else if (toMe && !eigen) raw = await X.nip44Decrypt(await X.conversationKey(T.sk, ev.pubkey), raw);
+      const raw = chan ? await X.nip44Decrypt(chan.ck, ev.content) : await X.nip44Decrypt(await X.conversationKey(T.sk, ev.pubkey), ev.content);
       const j = JSON.parse(raw); msg.name = String(j.n || '').slice(0, 12) || ev.pubkey.slice(0, 6); msg.text = String(j.t || '').slice(0, 500);
-    } catch (e) { return; }                                                  // nicht für uns oder unlesbar
+    } catch (e) { return; }
   }
   if (!msg.text) return;
   const c = parseCoord(msg.text);
   if (c && !eigen) { T.pos[ev.pubkey] = { name: msg.name, lat: c.lat, lon: c.lon, ts: msg.ts }; drawTalkPos(); }
   T.msgs.push(msg); T.msgs.sort((a, b) => a.ts - b.ts); if (T.msgs.length > 300) T.msgs.splice(0, T.msgs.length - 300);
   clearTimeout(T.saveT); T.saveT = setTimeout(() => idbPut('meta', T.msgs.slice(-200), 'talklog').catch(() => {}), 1500);
-  const fresh = msg.ts > Date.now() - 10 * 60000;
-  if (!eigen && fresh && (!S.set.talkPw || !S.set.talkOnlyGroup || msg.group || msg.priv)) {
-    if ($('#sheetTitle').textContent !== '💬 b:con talk' || $('#sheet').hidden) { T.unread++; updateTalkBadge(); toast(`💬 ${msg.name}: ${msg.text.slice(0, 80)}`, 4000); buzz([30, 60, 30]); }
+  if (!eigen && msg.ts > Date.now() - 10 * 60000 && ($('#sheetTitle').textContent !== '💬 b:con talk' || $('#sheet').hidden)) {
+    T.unread++; updateTalkBadge(); toast(`💬 ${msg.chan} · ${msg.name}: ${msg.text.slice(0, 80)}`, 4000); buzz([30, 60, 30]);
   }
   talkRenderList();
 }
 function updateTalkBadge() { const b = $('#bTalk'); b.dataset.n = S.talk.unread || ''; b.classList.toggle('badge', !!S.talk.unread); }
 function talkRenderStatus() {
   const el = $('#talkStatus'); if (!el) return;
-  const st = S.talk.status || { offen: 0, gesamt: 0 }, g = S.talk.group;
-  el.innerHTML = `${st.offen ? '🟢' : '🔴'} ${st.offen}/${st.gesamt} Relays · ${g ? '🔒 Gruppe ' + g.kennung.slice(0, 6) : '🌍 offen'} · Region ${esc(talkScopeLabel() || '–')} · du: ${esc(talkRufname())} (${(S.talk.pk || '').slice(0, 8)})`;
+  const st = S.talk.status || { offen: 0, gesamt: 0 }, ch = S.talk.channels || [];
+  el.innerHTML = `${st.offen ? '🟢' : '🔴'} ${st.offen}/${st.gesamt} Relays · ${ch.length ? ch.map(c => c.icon + ' ' + esc(c.name)).join(' · ') : 'kein Kanal – Cache als Ziel wählen oder Team-Passwort setzen'} · du: ${esc(talkRufname())}`;
 }
 function talkRenderList() {
   const el = $('#talkList'); if (!el) return;
-  const T = S.talk, only = S.set.talkPw && S.set.talkOnlyGroup;
-  const list = T.msgs.filter(m => !only || m.group || m.priv || m.eigen).slice(-120);
+  const T = S.talk, names = (T.channels || []).map(c => c.icon + ' ' + c.name).concat(['✉️ privat']);
+  const list = T.msgs.filter(m => names.includes(m.chan)).slice(-120);
   el.innerHTML = list.map((m, i) => {
+    if (!m.chan) return '';
     const c = parseCoord(m.text);
-    return `<li class="tmsg${m.eigen ? ' me' : ''}"><div class="th">${m.group ? '🔒' : m.priv ? '✉️' : '🌍'} <b>${esc(m.name)}</b> <small>${new Date(m.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></div>
+    return `<li class="tmsg${m.eigen ? ' me' : ''}"><div class="th"><span class="chan">${esc(m.chan || '')}</span> <b>${esc(m.name)}</b> <small>${new Date(m.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></div>
       <div class="tt">${esc(m.text)}</div>${c ? `<button data-tgo="${i}">🎯 als Ziel</button>` : ''}</li>`;
   }).join('') || '<li class="empty">Noch keine Nachrichten der letzten 24 h.</li>';
   el.querySelectorAll('[data-tgo]').forEach(b => { b.onclick = () => { const m = list[+b.dataset.tgo], c = parseCoord(m.text); setTarget({ kind: 'wpt', geocode: '', lat: c.lat, lon: c.lon, label: '💬 ' + m.name, name: m.name }); }; });
+  if (!list.length) el.innerHTML = '<li class="empty">Noch keine Nachrichten in deinen Kanälen (letzte 24 h).</li>';
   el.scrollTop = el.scrollHeight;
 }
 async function talkSend(text) {
   const T = S.talk, X = NX();
   text = String(text || '').trim(); if (!text) return;
   if (!T.pool || !T.sk) throw new Error('b:con talk ist aus (Einstellungen)');
+  const chan = (T.channels || []).find(c => c.id === T.sendTo);
+  if (!chan) throw new Error('Kein Kanal: einen Cache als Ziel wählen oder ein Team-Passwort setzen');
   const body = JSON.stringify({ n: talkRufname(), t: text.slice(0, 500), p: 0 }); // übers Netz nie Durchsage
-  const tags = X.regionTags(S.set.talkPlz).concat([['alt', 'b:con-Chat'], ['expiration', String(Math.floor(Date.now() / 1000) + 86400)]]);
-  let content = body;
-  if (T.group) { content = await X.nip44Encrypt(T.group.ck, body); tags.push(['gruppe', T.group.kennung]); }
-  if (!S.set.talkPlz && !T.group) throw new Error('PLZ fehlt (Einstellungen) – ohne Region oder Gruppe findet niemand die Nachricht');
-  const ev = await X.finishEvent({ kind: 4423, tags, content }, T.sk);
-  const res = await T.pool.publish(ev);
-  const ok = res.filter(r => r.ok).length;
+  const tags = [['L', 'bcon.gruppe'], ['l', chan.kennung, 'bcon.gruppe'], ['gruppe', chan.kennung], ['alt', 'b:con-Chat'],
+    ['expiration', String(Math.floor(Date.now() / 1000) + 86400)]];
+  const ev = await X.finishEvent({ kind: 4423, tags, content: await X.nip44Encrypt(chan.ck, body) }, T.sk);
+  const res = await T.pool.publish(ev), ok = res.filter(r => r.ok).length;
   if (!ok) throw new Error('kein Relay hat angenommen' + (res[0] ? ': ' + (res[0].msg || '') : ''));
   await talkEvent(ev); // eigenes Echo sofort anzeigen
   return ok;
 }
-function showTalk() {
+async function showTalk() {
+  if (S.talk.chanCode !== cacheCode()) { S.talk.chanCode = cacheCode(); await talkSubscribe(); }
   if (!S.set.talkOn) return toast('b:con talk in den Einstellungen einschalten');
   const T = S.talk; T.unread = 0; updateTalkBadge();
+  await talkChannels();
   const c = curCache(), here = S.pos ? `📍 ${fmtCoord(S.pos.lat, S.pos.lon)} ±${Math.round(S.pos.acc)} m` : '';
   openSheet('💬 b:con talk', `
     <p class="sub" id="talkStatus"></p>
-    ${S.set.talkPw ? `<label class="f c"><input type="checkbox" id="tOnly" ${S.set.talkOnlyGroup ? 'checked' : ''}><span>nur Gruppe anzeigen</span></label>` : ''}
+    <div class="seg" id="tChan">${(T.channels || []).map(c => `<label><input type="radio" name="tch" value="${c.id}" ${c.id === T.sendTo ? 'checked' : ''}>${c.icon} ${esc(c.name)}</label>`).join('')}</div>
     <ul class="tlist" id="talkList"></ul>
     <div class="tsend"><input id="tText" type="text" maxlength="500" placeholder="Nachricht …"><button id="tSend">➤</button></div>
     <div class="tools"><button data-q="pos">📍 Standort</button>${c ? '<button data-q="found">✅ Gefunden</button>' : ''}${S.target ? '<button data-q="ziel">🎯 Ziel teilen</button>' : ''}<button data-q="help">🙋 Hilfe</button></div>
-    <p class="sub">Über öffentliche Nostr-Relays, Nachrichten verfallen nach 24 h. ${S.talk.group ? 'Gruppe: verschlüsselt (NIP-44).' : 'Offen: jeder in der Region kann mitlesen.'} b:con ist kein Notrufsystem.</p>`, b => {
+    <p class="sub">🧩 = alle, die diesen Cache als Ziel haben und b:con talk an. Den Kanal kann lesen, wer den Code kennt – also nicht geheim. 🔒 Team = nur mit eurem Passwort. Über öffentliche Nostr-Relays, verfällt nach 24 h. b:con ist kein Notrufsystem.</p>`, b => {
     talkRenderStatus(); talkRenderList();
     const send = txt => run(async () => { const n = await talkSend(txt); b.querySelector('#tText').value = ''; toast(`💬 gesendet (${n} Relay${n > 1 ? 's' : ''})`); });
     b.querySelector('#tSend').onclick = () => send(b.querySelector('#tText').value);
     b.querySelector('#tText').onkeydown = e => { if (e.key === 'Enter') send(e.target.value); };
-    const o = b.querySelector('#tOnly'); if (o) o.onchange = () => { S.set.talkOnlyGroup = o.checked; saveSettings(); talkRenderList(); };
+    b.querySelectorAll('input[name=tch]').forEach(r => { r.onchange = () => { S.talk.sendTo = r.value; }; });
     b.querySelectorAll('[data-q]').forEach(q => {
       q.onclick = () => {
         const k = q.dataset.q;
@@ -2112,9 +2130,8 @@ function showSettings() {
     <h4>💬 b:con talk (Nostr, öffentliche Relays)</h4>
     ${chk('talkOn', 'b:con talk einschalten')}
     ${f('talkName', 'Rufname (bis 6 Zeichen A–Z, 0–9)')}
-    ${f('talkPlz', 'PLZ für die Region (z. B. 86157)', 'text', 'inputmode="numeric" maxlength="5"')}
-    <label class="f"><span>Reichweite: mitlesen in</span><select data-k="talkScope"><option value="1">PLZ-Bereich 1-stellig (DE8…)</option><option value="2">2-stellig (DE86…)</option><option value="3">3-stellig (DE861…)</option><option value="5">genau diese PLZ</option></select></label>
-    ${f('talkPw', 'Gruppen-Passwort (leer = offen in der Region)', 'password')}
+    ${chk('talkCache', '🧩 Kanal zum aktuellen Cache (GC/OC-Code): alle, die ihn als Ziel haben, sind dabei')}
+    ${f('talkPw', '🔒 Team-Passwort (optional, eigener Kanal)', 'password')}
     ${f('talkRelays', 'Relays (Leerzeichen getrennt)')}
     <h4>Meine Ausrüstung</h4>
     <p class="sub">Erkannt aus Attributen und aus Hint, Listing und KI-Suchhilfe. ❗ = ohne das geht es nicht, 🎒 = einpacken.</p>
@@ -2146,7 +2163,7 @@ function showSettings() {
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
         if (k === 'mapDark') applyMapDark();
         if (k === 'night') applyNight();
-        if (/^talk(On|Plz|Scope|Pw|Relays)$/.test(k)) { clearTimeout(S.talkT); S.talkT = setTimeout(() => run(initTalk), 800); }
+        if (/^talk(On|Pw|Cache|Relays)$/.test(k)) { clearTimeout(S.talkT); S.talkT = setTimeout(() => run(initTalk), 800); }
         if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };
     });

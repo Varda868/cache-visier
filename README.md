@@ -121,9 +121,10 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
   - Gerechnet wird mit Luftlinie; Wege, Flüsse und Zäune kennt die Planung nicht.
   - Übersprungen werden ungelöste Mysterys (ohne korrigierte Koordinaten) und Caches, für die dir laut Einstellungen Ausrüstung fehlt.
 - **💬 b:con talk** (⚙️ einschalten, Knopf oben):
-  - Chat über die öffentlichen Nostr-Relays (`wss://nos.lol`, `wss://relay.primal.net`, `wss://nostr.mom`), ohne Funkgerät, nach dem b:con-Protokoll (Art 4423).
-  - **Offen:** Region nach PLZ, Labels `bcon.plz` mit allen Präfixen; mitlesen je nach Reichweite (1-, 2-, 3-stellig oder genau).
-  - **Gruppe:** Passwort → PBKDF2 (200 000 Runden, Salz „bcon-gruppe1“) → Schlüssel, Nachrichten NIP-44-verschlüsselt mit Tag `gruppe`. Andere Gruppen werden ignoriert.
+  - Chat über die öffentlichen Nostr-Relays (`wss://nos.lol`, `wss://relay.primal.net`, `wss://nostr.mom`), ohne Funkgerät, nach dem b:con-Protokoll (Art 4423, NIP-44, `gruppe`-Tag).
+  - **🧩 Cache-Kanal:** Gruppen-Passwort ist der GC/OC-Code des aktuellen Ziels. Alle, die diesen Cache als Ziel haben und b:con talk an, sind automatisch im selben Kanal. Wechselt das Ziel, wechselt der Kanal mit. Nicht geheim: lesen kann, wer den Code kennt.
+  - **🔒 Team:** eigenes Passwort, eigener Kanal, zusätzlich.
+  - Schlüssel wie bei b:con-Gruppen: PBKDF2, 200 000 Runden, Salz „bcon-gruppe1“. Gefunden werden die Nachrichten über das Label `bcon.gruppe` mit der Gruppenkennung, weil Relays nur nach einbuchstabigen Tags filtern. Keine PLZ nötig.
   - Private Nachrichten an dich (Tag `p`) werden entschlüsselt.
   - Schnellknöpfe: 📍 Standort, ✅ Gefunden, 🎯 Ziel teilen, 🙋 Hilfe. Koordinaten in Nachrichten lassen sich als Ziel setzen, und die letzten Positionen anderer erscheinen auf der Karte (3 h).
   - Jedes Event wird geprüft (Signatur, Ablauf 24 h).
