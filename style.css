@@ -21,7 +21,7 @@ body[data-mode=map] #cam, body[data-mode=map] #view { display: none; }
 #top .tt { flex: 1; min-width: 0; }
 #tName { font-weight: 650; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tSub { color: var(--mut); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#bList, #bRoute, #bNight { font-size: 22px; padding: 4px 10px; }
+#bList, #bRoute, #bNight, #bTalk { font-size: 22px; padding: 4px 9px; position: relative; }
 #bNight.on { background: #8b0000; border-color: #c00; }
 #bRoute.on { background: #3d8bff; border-color: #3d8bff; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; border: 1px solid rgba(0,0,0,.5); }
@@ -178,7 +178,8 @@ body.mapdark .leaflet-container { background: #0e1216; }
 #nightveil { position: fixed; inset: 0; z-index: 10000; pointer-events: none; display: none; background: #ff2200; mix-blend-mode: multiply; }
 body.night #nightveil { display: block; }
 body.night { filter: brightness(.75); }
-#spots { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 395; pointer-events: none; }
+/* Reflektor-Ringe über dem roten Schleier: in echter Farbe sichtbar */
+#spots { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 10001; pointer-events: none; }
 body[data-mode=map] #spots { display: none; }
 #spotInfo { position: absolute; left: 50%; top: calc(50% + 70px); transform: translateX(-50%); padding: 4px 12px; border-radius: 10px;
   background: rgba(0,0,0,.6); color: var(--acc); font-weight: 700; }
@@ -198,3 +199,16 @@ body[data-mode=map] #spots { display: none; }
 .tourNr { background: #b10dc9; color: #fff; border-radius: 50%; font: bold 12px/20px system-ui; text-align: center; border: 1px solid #fff; }
 .tourNr.done { opacity: .45; }
 .tnr { width: 24px; height: 24px; flex: none; border-radius: 50%; background: #b10dc9; color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 13px; }
+.gear.soft small { color: var(--warn); }
+
+#bTalk.badge::after { content: attr(data-n); position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; border-radius: 9px;
+  background: var(--bad); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.tlist { list-style: none; margin: 6px 0; padding: 0; max-height: 42vh; overflow: auto; }
+.tmsg { padding: 7px 9px; margin: 5px 0; border-radius: 10px; background: rgba(255,255,255,.06); max-width: 88%; }
+.tmsg.me { margin-left: auto; background: rgba(61,139,255,.18); }
+.tmsg .th small { color: var(--mut); }
+.tmsg .tt { white-space: pre-wrap; word-break: break-word; margin-top: 2px; }
+.tmsg button { margin-top: 5px; font-size: 13px; padding: 4px 8px; }
+.tsend { display: flex; gap: 6px; }
+.tsend input { flex: 1; }
+.talkPos { background: rgba(11,15,20,.85); color: #8fc1ff; border: 1px solid #3d8bff; border-radius: 8px; padding: 1px 6px; font-size: 12px; white-space: nowrap; }

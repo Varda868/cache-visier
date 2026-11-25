@@ -96,8 +96,10 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
 
 - **🌙 Nachtmodus** (oben):
   - Die ganze Anzeige wird rot und gedimmt, damit die Augen an die Dunkelheit gewöhnt bleiben.
-  - Im Kamerabild sucht die App kleine, sehr helle Flecken vor dunklem Grund (Reflektoren/Firetacks), markiert sie mit Ringen und nennt die Farbe. Das läuft auf dem Handy, ohne KI und ohne Netz. Am besten mit 🔦 Lampe an.
-  - Große helle Flächen wie Laternen werden ignoriert.
+  - Im Kamerabild sucht die App kleine, sehr helle Flecken vor dunklem Grund (Reflektoren/Firetacks), markiert sie mit Ringen in ihrer echten Farbe (weiß, grün, rot, blau …) und nennt die Farbe. Das läuft auf dem Handy, ohne KI und ohne Netz. Am besten mit 🔦 Lampe an.
+  - Die Ringe liegen über dem roten Schleier, damit die Farbe erkennbar bleibt.
+  - Große helle Flächen wie Laternen werden ignoriert. Dicht beieinanderliegende Flecken zählen als ein Reflektor, mit Anzahl in Klammern.
+  - **Reflektor antippen:** Die Richtung vom Standort zum Reflektor kommt als Peilung ins 📐-Blatt (Entfernung selbst eintragen oder schätzen). Auf der Karte erscheint ein weißer Peilstrahl (300 m), löschbar im 📐-Blatt.
 - **Ansagen und Vibration:**
   - Abstände zum Ziel bei 2 km, 1 km, 500, 200, 100, 50, 20 und 10 m, mit Route über den Restweg gerechnet.
   - Abzweigungen etwa 120 m vorher und „Jetzt“ bei 20 m, bei Tempo über 6 m/s bei 300 und 40 m.
@@ -118,11 +120,23 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
   - Auf der Karte lila mit Nummern, in der Kopfzeile „🗺️ 3/12“.
   - Gerechnet wird mit Luftlinie; Wege, Flüsse und Zäune kennt die Planung nicht.
   - Übersprungen werden ungelöste Mysterys (ohne korrigierte Koordinaten) und Caches, für die dir laut Einstellungen Ausrüstung fehlt.
+- **💬 b:con talk** (⚙️ einschalten, Knopf oben):
+  - Chat über die öffentlichen Nostr-Relays (`wss://nos.lol`, `wss://relay.primal.net`, `wss://nostr.mom`), ohne Funkgerät, nach dem b:con-Protokoll (Art 4423).
+  - **Offen:** Region nach PLZ, Labels `bcon.plz` mit allen Präfixen; mitlesen je nach Reichweite (1-, 2-, 3-stellig oder genau).
+  - **Gruppe:** Passwort → PBKDF2 (200 000 Runden, Salz „bcon-gruppe1“) → Schlüssel, Nachrichten NIP-44-verschlüsselt mit Tag `gruppe`. Andere Gruppen werden ignoriert.
+  - Private Nachrichten an dich (Tag `p`) werden entschlüsselt.
+  - Schnellknöpfe: 📍 Standort, ✅ Gefunden, 🎯 Ziel teilen, 🙋 Hilfe. Koordinaten in Nachrichten lassen sich als Ziel setzen, und die letzten Positionen anderer erscheinen auf der Karte (3 h).
+  - Jedes Event wird geprüft (Signatur, Ablauf 24 h).
+  - Der eigene Schlüssel wird im Handy erzeugt und bleibt dort (IndexedDB).
+  - Sprechfunk (Art 4420) erscheint nur als Hinweis; Hören und Sprechen bräuchten Codec2 aus der b:con-App.
+  - Krypto ohne fremde Bibliothek (`nostr.js`), geprüft gegen die offiziellen Testvektoren von BIP-340, RFC 8439 und NIP-44 und gegen eine Python-Referenz.
 - **Attribute und Ausrüstung:**
   - Attribute kommen aus c:geo (`cg_attributes`), GPX und Opencaching.
-  - Werkzeug-Attribute (🔦 Taschenlampe, 🟣 UV, 🔧 Spezialwerkzeug, 🧗 Klettern, 🚣 Boot, 🤿 Tauchen, 🥾 Waten …) stehen in Kopfzeile, Liste und Infoblatt; ❗ heißt, dir fehlt etwas.
+  - Liste der üblichen Cacher-Ausrüstung (Grundausstattung und erweiterte Cache-Ausrüstung): 🔦 Taschenlampe, 🟣 UV-Lampe/UV-Stift, ✏️ Stift, 🥢 Pinzette, 🧲 Magnet/Teleskopmagnet, 🪞 Inspektionsspiegel, 🧤 Handschuhe, 🔧 Schraubendreher/Inbus/Torx, 💧 Wasser zum Einfüllen, 📏 Zollstock, 🪜 Leiter, 🎣 Teleskopstange/Angel, 🥾 Wathose sowie Klettern, Boot und Tauchen aus den Attributen.
+  - In Kopfzeile, Liste und Infoblatt: ❗ = ohne das geht es nicht (die Tour überspringt den Cache), 🎒 = hilfreich, einpacken.
+  - Die Tour zeigt eine Packliste für alle ihre Caches.
   - Unter ⚙️ → „Meine Ausrüstung“ einstellen.
-  - Für Werkzeug ohne eigenes Attribut (🪜 Leiter, 🎣 Teleskopstange/Angel, Wathose) sucht die App in Hint, Listing und der KI-Suchhilfe nach diesen Wörtern. So erkannte Werkzeuge stehen mit „(aus Text)“ da.
+  - Aus Text erkannt: Hint und KI-Suchhilfe direkt, im Listing nur mit Bedarfswort in der Nähe („mitbringen“, „nötig“, „hilfreich“ …). Eine magnetische Dose zählt nicht als „Magnet nötig“. So erkannte Teile stehen mit „(aus Text)“ da.
   - Die KI bekommt die Attribute mit und soll sie mit den Logs konkretisieren, z. B. welches Spezialwerkzeug genau.
 - **📦 Offline** (☰):
   - Lädt die App-Bausteine (Karte, SQLite) in den Speicher, wertet die Logs der ungefundenen Caches im Umkreis aus und liest auf Wunsch die Multi-Stationen.

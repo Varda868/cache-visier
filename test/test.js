@@ -45,6 +45,13 @@ t('Bildschirmdrehung 90°', () => {
   near(s[0][2], -1, 1e-9); // Bildschirm-rechts zeigt nach unten? (Gerät-oben zeigt nach links → rechts = -oben)
 });
 
+t('Antippen im Kamerabild → Richtung', () => {
+  const c = A.colsFromEuler(0, 90, 0);   // senkrecht nach Norden
+  near(A.screenRay(c, 200, 400, 50, 400, 800).deg, 0, 1e-9);
+  near(A.screenRay(c, 400, 400, 50, 400, 800).deg, 25, 1e-6);       // rechter Rand = halber Bildwinkel
+  near(A.screenRay(c, 0, 400, 50, 400, 800).deg, 335, 1e-6);
+  assert.ok(A.screenRay(c, 200, 100, 50, 400, 800).elev > 0);       // oben im Bild = über dem Horizont
+});
 t('Typen und Logtypen', () => {
   assert.strictEqual(A.normType('mystery'), 'mystery'); assert.strictEqual(A.normType('Unknown Cache'), 'mystery');
   assert.strictEqual(A.normType('Traditional Cache'), 'tradi'); assert.strictEqual(A.normType('Multi'), 'multi');
@@ -112,6 +119,10 @@ t('Reflektoren finden, große Lichtflächen ignorieren', () => {
   const sp = A.findBrightSpots(px, w, h);
   assert.strictEqual(sp.length, 2);
   near(sp.find(p => p.x < 50).x, 31, 0.01); near(sp.find(p => p.x < 50).y, 21, 0.01);
+  // zwei Flecken dicht nebeneinander = ein Reflektor
+  put(60, 30, 2, 150, 255, 150); put(64, 30, 2, 150, 255, 150);
+  const sp2 = A.findBrightSpots(px, w, h); const gr = sp2.filter(p => A.colorName(p.rgb) === 'grün');
+  assert.strictEqual(gr.length, 1); assert.strictEqual(gr[0].teile, 2); near(gr[0].x, 62.5, 0.01);
   assert.strictEqual(A.colorName([255, 255, 250]), 'weiß'); assert.strictEqual(A.colorName([230, 40, 30]), 'rot'); assert.strictEqual(A.colorName([40, 220, 60]), 'grün');
 });
 t('Ansage-Stufen', () => {
@@ -133,14 +144,24 @@ t('Attribute zuordnen', () => {
 });
 
 t('Werkzeug aus Text erkennen', () => {
-  assert.deepStrictEqual(A.textTools({ hint: 'Ohne Leiter wird es schwer' }).map(x => x.key), ['ladder']);
-  assert.deepStrictEqual(A.textTools({ hint: 'Der Teamleiter grüßt' }), []);
-  assert.deepStrictEqual(A.textTools({ desc: '<p>Hängt im Baum, Angel mitnehmen</p>' }).map(x => x.key), ['pole']);
-  const ai = { suchhilfe: [{ kategorie: 'werkzeug', hinweis: 'Teleskopstange', zitat: 'mit Stange geangelt' }] };
-  assert.deepStrictEqual(A.textTools({}, ai).map(x => x.key), ['pole']);
+  const keys = c => A.textTools(c).map(x => x.key);
+  assert.deepStrictEqual(keys({ hint: 'Ohne Leiter wird es schwer' }), ['ladder']);
+  assert.deepStrictEqual(keys({ hint: 'Der Teamleiter grüßt' }), []);
+  assert.deepStrictEqual(keys({ desc: '<p>Hängt im Baum, Angel mitnehmen</p>' }), ['pole']);
+  assert.deepStrictEqual(keys({ desc: '<p>Die Geschichte vom Spiegel im Schloss.</p>' }), []);            // Listing ohne Bedarfswort
+  assert.deepStrictEqual(keys({ desc: 'Ein Teleskopspiegel ist hilfreich.' }), ['mirror']);
+  assert.deepStrictEqual(keys({ hint: 'magnetisch, unten' }), []);                                       // magnetische Dose ≠ Magnet nötig
+  assert.deepStrictEqual(keys({ hint: 'Teleskopmagnet' }), ['magnet']);
+  assert.deepStrictEqual(keys({ desc: 'Bitte eine UV-Lampe mitbringen, Koordinaten in unsichtbarer Tinte.' }), ['uv']);
+  assert.deepStrictEqual(keys({ hint: 'Wasser einfüllen!' }), ['water']);
+  assert.deepStrictEqual(keys({ hint: 'Torx T20' }), ['special_tool']);
+  const ai = { suchhilfe: [{ kategorie: 'werkzeug', hinweis: 'Pinzette', zitat: 'ohne Pinzette keine Chance' }] };
+  assert.deepStrictEqual(A.textTools({}, ai).map(x => x.key), ['tweezers']);
   const c = { attrs: [A.mapAttr('wading_yes')], hint: 'Wathose!' };
   assert.deepStrictEqual(A.toolsOf(c).map(x => x.key), ['wading']);   // nicht doppelt
-  assert.deepStrictEqual(A.missingGear({ hint: 'Leiter' }, { gear_ladder: false }).map(x => x.key), ['ladder']);
+  const set = { gear_ladder: false, gear_tweezers: false };
+  assert.deepStrictEqual(A.missingGear({ hint: 'Leiter und Pinzette' }, set).map(x => x.key).sort(), ['ladder', 'tweezers']);
+  assert.deepStrictEqual(A.missingGear({ hint: 'Leiter und Pinzette' }, set, null, true).map(x => x.key), ['ladder']);  // nur hart
 });
 t('Tour ohne Hin und Her', () => {
   const s = { lat: 48.37, lon: 10.89 }, at = m => ({ lat: 48.37, lon: 10.89 + m / 74000 });

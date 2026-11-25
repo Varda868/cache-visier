@@ -117,6 +117,13 @@ function viewHeading(cols) {
   const cam = camVec(cols);
   return Math.abs(vecElev(cam)) < 50 ? vecHeading(cam) : vecHeading(cols[1]);
 }
+/* Richtung (Grad) und Höhenwinkel eines angetippten Bildschirmpunkts im Kamerabild */
+function screenRay(cols, x, y, fovH, W, H) {
+  const tanH = Math.tan(fovH / 2 * D2R), tanV = tanH * H / W;
+  const u = (x - W / 2) / (W / 2) * tanH, v = -(y - H / 2) / (H / 2) * tanV, c = camVec(cols);
+  const d = [0, 1, 2].map(i => c[i] + u * cols[0][i] + v * cols[1][i]);
+  return { deg: vecHeading(d), elev: vecElev(d) };
+}
 /* Ziel (Ost/Nord/Oben in Metern) auf den Bildschirm projizieren; berücksichtigt Neigung und Kippen */
 function projectToScreen(cols, t, fovH, W, H) {
   const dx = dot(cols[0], t), dy = dot(cols[1], t), fwd = -dot(cols[2], t);
@@ -323,23 +330,39 @@ function mapAttr(raw, gcId, inc) {
   return { key: a[0], icon: a[1], label: (neg ? 'nicht: ' : '') + a[2], tool: a[3] && !neg, yes: !neg };
 }
 function toolAttrs(c) { return (c.attrs || []).filter(a => a.tool); }
-/* Werkzeug, für das es kein Attribut gibt, aus Hint, Listing und KI-Suchhilfe erkennen */
-const TEXT_TOOLS = [
-  ['ladder', '🪜', 'Leiter', /\b(trittleiter|klappleiter|stehleiter|leiter)\b/i],
-  ['pole', '🎣', 'Teleskopstange / Angel', /teleskop(stange)?|\bangel(rute|haken)?\b|stange mit haken|greifzange/i],
-  ['wading', '🥾', 'Waten / Wathose', /wathose|gummistiefel|watstiefel/i]
+/* Ausrüstung: übliche Cacher-Werkzeuge (Grundausstattung + „erweiterte Cache-Ausrüstung“, ECA).
+   hart = ohne das Teil geht der Cache nicht (Tour überspringt ihn), sonst nur „einpacken“.
+   Erkannt aus Attributen (siehe ATTRS) und aus Text: Hint und KI-Suchhilfe direkt, Listing nur mit Bedarfswort in der Nähe. */
+const GEAR = [ // Schlüssel, Symbol, Text, hart, „hab ich“ vorbelegt, Muster
+  ['flashlight', '🔦', 'Taschenlampe', false, true, /taschenlampe|stirnlampe/i],
+  ['uv', '🟣', 'UV-Lampe / UV-Stift', true, false, /\buv\b|uv-?(lampe|licht|stift|taschenlampe|led)|schwarzlicht|unsichtbare?n? tinte/i],
+  ['pen', '✏️', 'Stift', false, true, /(eigenen|kein(en)?|ohne) stift|stift (mitbringen|mitnehmen|nicht vergessen)|byop|bring your own pen/i],
+  ['tweezers', '🥢', 'Pinzette', false, true, /pinzette/i],
+  ['magnet', '🧲', 'Magnet / Teleskopmagnet', true, false, /teleskopmagnet|magnetstift|magnetangel|starke[nr]? magnet|magnet (mitbringen|mitnehmen|nötig|benötigt|hilft)|mit (einem|nem) magnet/i],
+  ['mirror', '🪞', 'Inspektionsspiegel', false, false, /(teleskop|inspektions|zahnarzt)spiegel|spiegel (mitbringen|hilft|nötig|benötigt)/i],
+  ['gloves', '🧤', 'Handschuhe', false, true, /handschuh/i],
+  ['special_tool', '🔧', 'Spezialwerkzeug (Schraubendreher, Inbus, Torx …)', true, false, /schraubendreher|schraubenzieher|inbus|torx|vierkant|dreikant|bit-?satz|steckschlüssel|maulschlüssel|spezialwerkzeug/i],
+  ['water', '💧', 'Wasser zum Einfüllen', true, false, /wasser (mitbringen|mitnehmen|einfüllen|nachfüllen)|(liter|flasche|kanister) wasser|wassercache/i],
+  ['measure', '📏', 'Zollstock / Maßband', false, false, /zollstock|maßband|meterstab/i],
+  ['ladder', '🪜', 'Leiter', true, false, /\b(trittleiter|klappleiter|stehleiter|teleskopleiter|leiter)\b/i],
+  ['pole', '🎣', 'Teleskopstange / Angel', true, false, /teleskop(stange)?\b|\bangel(rute|haken)?\b|stange mit haken|greifzange/i],
+  ['wading', '🥾', 'Wathose / Gummistiefel', true, false, /wathose|gummistiefel|watstiefel/i]
 ];
+const GEAR_HARD = new Set(GEAR.filter(g => g[3]).map(g => g[0]).concat(['tree_climbing', 'climbing_gear', 'climbing', 'boat', 'scuba', 'swimming']));
+const NEED = /(mitbring|mitnehm|benötig|brauch|nötig|erforderlich|hilfreich|empfohl|einpack|nicht vergessen|dabei haben|ohne .{0,20} geht)/i;
 function textTools(c, ai) {
-  const parts = [c.hint, c.desc, c.note];
-  if (ai) (ai.suchhilfe || []).forEach(h => { if (h.kategorie === 'werkzeug' || h.kategorie === 'zugang') parts.push(h.hinweis, h.zitat); });
-  const txt = parts.filter(Boolean).map(htmlText).join('\n');
-  return TEXT_TOOLS.filter(t => t[3].test(txt)).map(t => ({ key: t[0], icon: t[1], label: t[2] + ' (aus Text)', tool: true, yes: true, derived: true }));
+  const direct = [c.hint, c.note];
+  if (ai) (ai.suchhilfe || []).forEach(h => { if (h.kategorie === 'werkzeug' || h.kategorie === 'zugang') direct.push(h.hinweis, h.zitat); });
+  const dtxt = direct.filter(Boolean).map(htmlText).join('\n'), desc = htmlText(c.desc || '');
+  const inDesc = re => { const g = new RegExp(re.source, 'gi'); let m; while ((m = g.exec(desc))) { if (NEED.test(desc.slice(Math.max(0, m.index - 80), m.index + m[0].length + 80))) return true; } return false; };
+  return GEAR.filter(t => t[5].test(dtxt) || inDesc(t[5])).map(t => ({ key: t[0], icon: t[1], label: t[2] + ' (aus Text)', tool: true, yes: true, derived: true }));
 }
 function toolsOf(c, ai) {
   const a = toolAttrs(c);
   return a.concat(textTools(c, ai).filter(d => !a.some(x => x.key === d.key)));
 }
-function missingGear(c, set, ai) { return toolsOf(c, ai).filter(a => set['gear_' + a.key] === false); }
+/* fehlende Ausrüstung; hartOnly: nur das, ohne das der Cache nicht geht */
+function missingGear(c, set, ai, hartOnly) { return toolsOf(c, ai).filter(a => set['gear_' + a.key] === false && (!hartOnly || GEAR_HARD.has(a.key))); }
 
 /* Tour: Reihenfolge durch Caches (nächster Nachbar + 2-opt), damit man nicht hin und her läuft */
 function planTour(start, pts, loop) {
@@ -363,10 +386,15 @@ function planTour(start, pts, loop) {
 function findBrightSpots(px, w, h, o) {
   o = o || {};
   const N = w * h, Y = new Float32Array(N);
-  let sum = 0, sum2 = 0;
-  for (let i = 0; i < N; i++) { const y = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2]; Y[i] = y; sum += y; sum2 += y * y; }
-  const mean = sum / N, sd = Math.sqrt(Math.max(0, sum2 / N - mean * mean));
-  const thr = Math.max(o.min || 200, mean + (o.k || 3.5) * sd), maxArea = Math.max(4, N * (o.maxFrac || 0.004));
+  let sum = 0;
+  for (let i = 0; i < N; i++) { const y = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2]; Y[i] = y; sum += y; }
+  // Schwelle robust aus Median und MAD: große helle Flächen (Laterne) sollen kleine Reflektoren nicht „überstrahlen“
+  const hist = new Uint32Array(256); for (let i = 0; i < N; i++) hist[Math.min(255, Y[i] | 0)]++;
+  const q = f => { let c = 0; for (let v = 0; v < 256; v++) { c += hist[v]; if (c >= f * N) return v; } return 255; };
+  const med = q(0.5), mean = sum / N;
+  const dev = new Uint32Array(256); for (let v = 0; v < 256; v++) dev[Math.abs(v - med)] += hist[v];
+  let c = 0, mad = 0; for (let v = 0; v < 256; v++) { c += dev[v]; if (c >= N / 2) { mad = v; break; } }
+  const thr = Math.max(o.min || 200, med + (o.k || 6) * 1.4826 * Math.max(mad, 2)), maxArea = Math.max(4, N * (o.maxFrac || 0.004));
   const seen = new Uint8Array(N), spots = [], stack = [];
   for (let s0 = 0; s0 < N; s0++) {
     if (seen[s0] || Y[s0] < thr) continue;
@@ -391,7 +419,23 @@ function findBrightSpots(px, w, h, o) {
     if (contrast < (o.contrast || 70)) continue;
     spots.push({ x: sx / n, y: sy / n, r: Math.max(1, Math.max(x1 - x0, y1 - y0) / 2), n, rgb: [sr / n, sg / n, sb / n], score: contrast * Math.sqrt(n) });
   }
-  return spots.sort((a, b) => b.score - a.score).slice(0, o.max || 8);
+  return mergeSpots(spots, o.merge == null ? Math.max(6, w * 0.035) : o.merge).sort((a, b) => b.score - a.score).slice(0, o.max || 8);
+}
+/* Flecken, die näher als d Pixel beieinander liegen, als einen Reflektor zählen (Mitte gewichtet, Farbe vom hellsten) */
+function mergeSpots(spots, d) {
+  const g = spots.map((p, i) => i), find = i => (g[i] === i ? i : (g[i] = find(g[i])));
+  for (let i = 0; i < spots.length; i++) for (let j = i + 1; j < spots.length; j++) {
+    const a = spots[i], b = spots[j];
+    if (Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r < d) g[find(i)] = find(j);
+  }
+  const by = new Map();
+  spots.forEach((p, i) => { const k = find(i); (by.get(k) || by.set(k, []).get(k)).push(p); });
+  return [...by.values()].map(ps => {
+    const w = ps.reduce((s, p) => s + p.score, 0), top = ps.reduce((a, b) => (b.score > a.score ? b : a));
+    const x = ps.reduce((s, p) => s + p.x * p.score, 0) / w, y = ps.reduce((s, p) => s + p.y * p.score, 0) / w;
+    const r = Math.max(...ps.map(p => Math.hypot(p.x - x, p.y - y) + p.r));
+    return { x, y, r, n: ps.reduce((s, p) => s + p.n, 0), rgb: top.rgb, score: w, teile: ps.length };
+  });
 }
 function colorName(rgb) {
   const [r, g, b] = rgb, mx = Math.max(r, g, b), mn = Math.min(r, g, b);
@@ -550,13 +594,16 @@ const DEFAULTS = {
   apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
-  gear_flashlight: true, gear_uv: false, gear_special_tool: false, gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false,
-  gear_boat: false, gear_scuba: false, gear_wading: false, gear_swimming: false, gear_ladder: false, gear_pole: false,
+  talkOn: false, talkName: '', talkPlz: '', talkScope: 2, talkPw: '', talkOnlyGroup: true, talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
+  gear_flashlight: true, gear_uv: false, gear_pen: true, gear_tweezers: true, gear_magnet: false, gear_mirror: false, gear_gloves: true,
+  gear_special_tool: false, gear_water: false, gear_measure: false, gear_ladder: false, gear_pole: false, gear_wading: false,
+  gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false, gear_boat: false, gear_scuba: false, gear_swimming: false,
   tourRadius: 2000, tourLoop: false,
   routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
   set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false,
+  talk: { msgs: [], seen: new Set(), unread: 0, pos: {} },
   ann: {}, annMan: {}, lockPrev: false, lockTs: 0, spots: [], peil: null, pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
   target: null, mode: 'cam', modeLock: null, stream: null, track: null, torch: false, dir: null,
   route: null, steer: null, routeBusy: false, routeTs: 0, offCount: 0,
@@ -904,16 +951,15 @@ function drawRoute() {
 function targetCache(geocode) {
   const c = S.caches.get(geocode); if (!c) return;
   setTarget({ kind: 'cache', geocode, lat: c.lat, lon: c.lon, name: c.name });
-  const miss = missingGear(c, S.set, S.ai.get(c.geocode)), night = (c.attrs || []).some(a => a.yes && (a.key === 'night' || a.key === 'night_rec'));
+  const miss = missingGear(c, S.set, S.ai.get(c.geocode), true), night = (c.attrs || []).some(a => a.yes && (a.key === 'night' || a.key === 'night_rec'));
   if (miss.length) toast('❗ Ausrüstung: ' + miss.map(a => a.icon + ' ' + a.label).join(', '), 5000);
   else if (night && !S.set.night) toast('🌙 Nachtcache – Nachtmodus mit 🌙 oben', 4000);
 }
 function curCache() { return S.target ? S.caches.get(S.target.geocode) : null; }
 /* Ausrüstung: Symbole der nötigen Werkzeuge, ❗ wenn dir etwas fehlt */
 function gearBadge(c) {
-  const t = toolsOf(c, S.ai.get(c.geocode)); if (!t.length) return '';
-  const miss = missingGear(c, S.set, S.ai.get(c.geocode));
-  return ' · ' + t.map(a => a.icon).join('') + (miss.length ? ' ❗' : '');
+  const ai = S.ai.get(c.geocode), t = toolsOf(c, ai); if (!t.length) return '';
+  return ' · ' + t.map(a => a.icon).join('') + (missingGear(c, S.set, ai, true).length ? ' ❗' : missingGear(c, S.set, ai).length ? ' 🎒' : '');
 }
 function renderTop() {
   const t = S.target, c = curCache();
@@ -1067,13 +1113,15 @@ function initMap() {
   S.L.route = L.polyline([], { color: '#3d8bff', weight: 6, opacity: 0.85 }).addTo(S.map);
   S.L.line = L.polyline([], { color: '#ffdc00', weight: 3, dashArray: '6 8' }).addTo(S.map);
   S.L.tour = L.layerGroup().addTo(S.map);
+  S.L.talk = L.layerGroup().addTo(S.map);
+  S.L.rays = L.layerGroup().addTo(S.map);
   S.L.steer = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, fillColor: '#3d8bff', fillOpacity: 1, interactive: false });
   S.L.acc = L.circle([0, 0], { radius: 1, weight: 1, color: '#39cccc', fillOpacity: 0.1 }).addTo(S.map);
   S.L.me = L.marker([0, 0], { icon: L.divIcon({ className: 'me', html: '<div class="meArrow"></div>', iconSize: [34, 34] }), interactive: false }).addTo(S.map);
   S.map.on('dragstart', () => { S.follow = false; $('#bFollow').hidden = false; });
   S.map.on('zoomstart', () => { if (!S.progZoom) S.zoomPause = performance.now() + 20000; });
   S.map.on('zoomend', () => { S.progZoom = false; });
-  drawCacheMarkers(); drawRoute(); drawTour();
+  drawCacheMarkers(); drawRoute(); drawTour(); drawTalkPos(); drawRays();
 }
 function drawCacheMarkers() {
   if (!S.map) return;
@@ -1237,7 +1285,7 @@ function showInfo() {
   openSheet(c.name, `
     <p class="sub">${esc(c.geocode)} · ${(TYPE_INFO[c.type] || TYPE_INFO.other)[0]} · D${c.d || '?'}/T${c.t || '?'} ${c.size ? '· ' + esc(c.size) : ''} ${c.owner ? '· von ' + esc(c.owner) : ''}</p>
     <p class="coord">${fmtCoord(c.lat, c.lon)}${c.corrected ? ' (korrigiert)' : ''}</p>
-    ${toolsOf(c, S.ai.get(c.geocode)).length ? `<h4>🧰 Ausrüstung</h4><ul class="list">${toolsOf(c, S.ai.get(c.geocode)).map(a => { const has = S.set['gear_' + a.key] !== false; return `<li class="gear ${has ? 'ok' : 'miss'}">${a.icon} <b>${esc(a.label)}</b> <small>${has ? '✓ hast du' : '✗ fehlt laut Einstellungen'}</small></li>`; }).join('')}</ul>` : ''}
+    ${toolsOf(c, S.ai.get(c.geocode)).length ? `<h4>🧰 Ausrüstung</h4><ul class="list">${toolsOf(c, S.ai.get(c.geocode)).map(a => { const has = S.set['gear_' + a.key] !== false, hart = GEAR_HARD.has(a.key); return `<li class="gear ${has ? 'ok' : hart ? 'miss' : 'soft'}">${a.icon} <b>${esc(a.label)}</b> <small>${has ? '✓ hast du' : hart ? '✗ fehlt – Tour überspringt' : '🎒 einpacken'}</small></li>`; }).join('')}</ul>` : ''}
     ${(c.attrs || []).filter(a => !a.tool).length ? `<h4>Attribute</h4><div class="chips">${(c.attrs || []).filter(a => !a.tool).map(a => `<span class="chip${a.yes ? '' : ' neg'}">${a.icon} ${esc(a.label)}</span>`).join('')}</div>` : ''}
     <h4>Hint</h4>
     <div id="hint" class="hint blur">${esc(htmlText(c.hint) || '– kein Hint –')}</div>
@@ -1626,16 +1674,44 @@ function drawSpots() {
   const cv = $('#spots'), v = $('#cam'), W = window.innerWidth, H = window.innerHeight, dpr = window.devicePixelRatio || 1;
   if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  const info = $('#spotInfo');
+  const info = $('#spotInfo'); S.spotScreen = [];
   if (!S.spots.length || !v.videoWidth) { info.hidden = !S.set.night || S.mode !== 'cam'; info.textContent = S.torch ? '✨ keine Reflektoren' : '✨ Lampe an für Reflektorsuche'; return; }
   const k = Math.max(W / v.videoWidth, H / v.videoHeight), ox = (W - v.videoWidth * k) / 2, oy = (H - v.videoHeight * k) / 2; // object-fit: cover
-  g.lineWidth = 3; g.font = 'bold 14px system-ui'; g.textAlign = 'center';
+  g.font = 'bold 15px system-ui'; g.textAlign = 'center';
+  const FARBE = { 'weiß': '#ffffff', rot: '#ff3b30', orange: '#ff9500', gelb: '#ffd60a', 'grün': '#30d158', blau: '#0a84ff', violett: '#bf5af2' };
   S.spots.forEach((p, i) => {
-    const x = ox + p.fx * v.videoWidth * k, y = oy + p.fy * v.videoHeight * k, r = Math.max(14, p.fr * v.videoWidth * k * 2.5);
-    g.strokeStyle = i === 0 ? '#ffdc00' : 'rgba(255,220,0,.6)'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = '#ffdc00'; g.fillText(colorName(p.rgb), x, y - r - 5);
+    const x = ox + p.fx * v.videoWidth * k, y = oy + p.fy * v.videoHeight * k, r = Math.max(16, p.fr * v.videoWidth * k * 2.5);
+    const name = colorName(p.rgb), col = FARBE[name] || '#ffffff';
+    S.spotScreen.push({ x, y, r, name });
+    g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.75)'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();   // dunkler Rand für Kontrast
+    g.lineWidth = i === 0 ? 4 : 3; g.strokeStyle = col; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+    const label = name + (p.teile > 1 ? ` (${p.teile})` : '');
+    g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,.8)'; g.strokeText(label, x, y - r - 6);
+    g.fillStyle = col; g.fillText(label, x, y - r - 6);
   });
-  info.hidden = false; info.textContent = `✨ ${S.spots.length} Reflektor${S.spots.length > 1 ? 'en' : ''}`;
+  info.hidden = false; info.textContent = `✨ ${S.spots.length} Reflektor${S.spots.length > 1 ? 'en' : ''} · antippen = Peilung`;
+}
+
+/* Reflektor antippen: Richtung vom Standort zum Reflektor als Peilung übernehmen, Peilstrahl auf der Karte */
+function onCamTap(e) {
+  if (!S.set.night || !S.cols || !(S.spotScreen || []).length || S.mode !== 'cam') return;
+  const x = e.clientX, y = e.clientY;
+  const hit = S.spotScreen.map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.r })).sort((a, b) => a.d - b.d)[0];
+  if (!hit || hit.d > 40) return;
+  const W = window.innerWidth, H = window.innerHeight, ang = (screen.orientation && screen.orientation.angle) || +window.orientation || 0;
+  const fov = W > H ? Math.min(S.set.fovH * 1.6, 120) : S.set.fovH;
+  const ray = screenRay(screenCols(S.cols, ang), hit.s.x, hit.s.y, fov, W, H), deg = (ray.deg + S.set.compassOffset + 360) % 360;
+  if (S.pos) { S.rays = (S.rays || []).concat([{ lat: S.pos.lat, lon: S.pos.lon, deg, name: hit.s.name, ts: Date.now() }]).slice(-12); drawRays(); }
+  buzz([40]); toast(`📐 Peilung ${Math.round(deg)}° ${compassName(deg)} zum Reflektor (${hit.s.name}) – Entfernung eintragen oder schätzen`, 4000);
+  showPeilung({ deg: Math.round(deg), dist: null });
+}
+function drawRays() {
+  if (!S.map || !S.L.rays) return;
+  S.L.rays.clearLayers();
+  for (const r of S.rays || []) {
+    const e = destPoint(r.lat, r.lon, 300, r.deg);
+    window.L.polyline([[r.lat, r.lon], [e.lat, e.lon]], { color: '#ffffff', weight: 2, dashArray: '4 6', opacity: 0.8 }).bindPopup(`${Math.round(r.deg)}° · ${esc(r.name)}`).addTo(S.L.rays);
+  }
 }
 
 /* ---------- Peilung / Projektion (auch Letterbox: Schritte, Kompasswert) ---------- */
@@ -1667,13 +1743,14 @@ function showPeilung(pre) {
       <label class="f"><span>Einheit</span><select id="pUnit"><option value="m">Meter</option><option value="steps">Schritte (${String(S.set.stepLen).replace('.', ',')} m)</option><option value="km">km</option><option value="ft">Fuß</option></select></label></div>
     <div class="two"><label class="f"><span>Richtung (°)</span><input id="pDeg" inputmode="decimal" value="${esc(pre.deg != null ? pre.deg : last.deg || '')}"></label>
       <label class="f c"><input type="checkbox" id="pMag" ${last.mag && pre.deg == null ? 'checked' : ''}><span>Kompasswert (missweisend, +${String(S.set.declination).replace('.', ',')}°)</span></label></div>
-    <div class="tools"><button id="pMeasure">📷 Mit der Kamera peilen</button><button id="pCalc">➜ Berechnen</button></div>
+    <div class="tools"><button id="pMeasure">📷 Mit der Kamera peilen</button><button id="pCalc">➜ Berechnen</button>${(S.rays || []).length ? `<button id="pRays">✕ ${S.rays.length} Peilstrahl${S.rays.length > 1 ? 'en' : ''} löschen</button>` : ''}</div>
     <div id="pRes"></div>`, b => {
     const $b = q => b.querySelector(q);
     $b('#pFrom').value = last.from || 'me'; $b('#pUnit').value = last.unit || 'm'; $b('#pCoord').value = last.coord || '';
     $b('#pCoord').hidden = $b('#pFrom').value !== 'coord';
     $b('#pFrom').onchange = () => { $b('#pCoord').hidden = $b('#pFrom').value !== 'coord'; };
     $b('#pMeasure').onclick = startPeilMessen;
+    if ($b('#pRays')) $b('#pRays').onclick = () => { S.rays = []; drawRays(); $b('#pRays').remove(); toast('Peilstrahlen gelöscht'); };
     const calc = () => {
       const f = { from: $b('#pFrom').value, coord: $b('#pCoord').value, dist: $b('#pDist').value, unit: $b('#pUnit').value, deg: $b('#pDeg').value, mag: $b('#pMag').checked };
       S.peilForm = f;
@@ -1697,6 +1774,135 @@ function showPeilung(pre) {
     $b('#pCalc').onclick = calc;
     if (pre.deg != null) setTimeout(() => { if ($b('#pDist').value) calc(); }, 50);
   });
+}
+
+/* ---------- b:con talk über öffentliche Nostr-Relays (Chat Art 4423, Sprechfunk Art 4420 nur als Hinweis) ---------- */
+const NX = () => window.CVNostr;
+function talkRufname() { return (S.set.talkName || 'CACHER').toUpperCase().replace(/[^A-Z0-9\-/.]/g, '').slice(0, 6) || 'CACHER'; }
+async function talkKey() {
+  let h = await idbGet('meta', 'nostrSk').catch(() => null);
+  if (!h) { const b = NX().randomBytes(32); b[0] &= 0x7f; h = NX().hex(b); await idbPut('meta', h, 'nostrSk'); } // bleibt nur im Handy
+  return NX().unhex(h);
+}
+function talkScopeLabel() { const plz = String(S.set.talkPlz || '').replace(/\D/g, ''); return plz.length >= 1 ? 'DE' + plz.slice(0, Math.max(1, Math.min(5, S.set.talkScope))) : ''; }
+async function initTalk() {
+  const T = S.talk;
+  $('#bTalk').hidden = !S.set.talkOn;
+  if (T.pool) { T.pool.close(); T.pool = null; }
+  if (!S.set.talkOn) return;
+  if (!NX()) return toast('b:con talk: Nostr-Baustein fehlt');
+  T.sk = await talkKey(); T.pk = NX().hex(NX().getPublicKey(T.sk));
+  T.group = null;
+  if (S.set.talkPw) { toast('🔒 Gruppenschlüssel wird berechnet …', 3000); T.group = await NX().groupKey(S.set.talkPw); }
+  if (!T.loaded) { T.loaded = true; const old = await idbGet('meta', 'talklog').catch(() => null); if (old) for (const m of old) { T.msgs.push(m); T.seen.add(m.id); } }
+  const urls = String(S.set.talkRelays || '').split(/[\s,]+/).filter(u => /^wss:\/\//.test(u));
+  T.pool = new (NX().Pool)(urls, ev => talkEvent(ev), st => { T.status = st; talkRenderStatus(); });
+  const since = Math.floor(Date.now() / 1000) - 86400, region = talkScopeLabel(), filters = [{ kinds: [4420, 4423], '#p': [T.pk], since }];
+  if (region) filters.unshift({ kinds: [4420, 4423], '#L': ['bcon.plz'], '#l': [region], since });
+  T.pool.sub('cvtalk', filters);
+  T.pool.open();
+  updateTalkBadge();
+}
+async function talkEvent(ev) {
+  const T = S.talk, X = NX();
+  if (!ev || T.seen.has(ev.id) || (ev.kind !== 4423 && ev.kind !== 4420)) return;
+  T.seen.add(ev.id);
+  if (!(await X.verifyEvent(ev))) return;                                  // gefälschte oder kaputte Events weg
+  const exp = +X.tagVal(ev, 'expiration'); if (exp && exp < Date.now() / 1000) return;
+  const gk = X.tagVal(ev, 'gruppe'), toMe = (ev.tags || []).some(t => t[0] === 'p' && t[1] === T.pk), eigen = ev.pubkey === T.pk;
+  let msg = { id: ev.id, pk: ev.pubkey, ts: ev.created_at * 1000, eigen, group: !!gk, priv: toMe && !gk, kind: ev.kind };
+  if (ev.kind === 4420) {
+    if (gk && (!T.group || gk !== T.group.kennung)) return;
+    msg.name = ev.pubkey.slice(0, 6).toUpperCase(); msg.text = '🎙️ Sprechfunk-Durchsage (hörbar in der b:con-App)';
+  } else {
+    let raw = ev.content;
+    try {
+      if (gk) { if (!T.group || gk !== T.group.kennung) return; raw = await X.nip44Decrypt(T.group.ck, raw); }
+      else if (toMe && !eigen) raw = await X.nip44Decrypt(await X.conversationKey(T.sk, ev.pubkey), raw);
+      const j = JSON.parse(raw); msg.name = String(j.n || '').slice(0, 12) || ev.pubkey.slice(0, 6); msg.text = String(j.t || '').slice(0, 500);
+    } catch (e) { return; }                                                  // nicht für uns oder unlesbar
+  }
+  if (!msg.text) return;
+  const c = parseCoord(msg.text);
+  if (c && !eigen) { T.pos[ev.pubkey] = { name: msg.name, lat: c.lat, lon: c.lon, ts: msg.ts }; drawTalkPos(); }
+  T.msgs.push(msg); T.msgs.sort((a, b) => a.ts - b.ts); if (T.msgs.length > 300) T.msgs.splice(0, T.msgs.length - 300);
+  clearTimeout(T.saveT); T.saveT = setTimeout(() => idbPut('meta', T.msgs.slice(-200), 'talklog').catch(() => {}), 1500);
+  const fresh = msg.ts > Date.now() - 10 * 60000;
+  if (!eigen && fresh && (!S.set.talkPw || !S.set.talkOnlyGroup || msg.group || msg.priv)) {
+    if ($('#sheetTitle').textContent !== '💬 b:con talk' || $('#sheet').hidden) { T.unread++; updateTalkBadge(); toast(`💬 ${msg.name}: ${msg.text.slice(0, 80)}`, 4000); buzz([30, 60, 30]); }
+  }
+  talkRenderList();
+}
+function updateTalkBadge() { const b = $('#bTalk'); b.dataset.n = S.talk.unread || ''; b.classList.toggle('badge', !!S.talk.unread); }
+function talkRenderStatus() {
+  const el = $('#talkStatus'); if (!el) return;
+  const st = S.talk.status || { offen: 0, gesamt: 0 }, g = S.talk.group;
+  el.innerHTML = `${st.offen ? '🟢' : '🔴'} ${st.offen}/${st.gesamt} Relays · ${g ? '🔒 Gruppe ' + g.kennung.slice(0, 6) : '🌍 offen'} · Region ${esc(talkScopeLabel() || '–')} · du: ${esc(talkRufname())} (${(S.talk.pk || '').slice(0, 8)})`;
+}
+function talkRenderList() {
+  const el = $('#talkList'); if (!el) return;
+  const T = S.talk, only = S.set.talkPw && S.set.talkOnlyGroup;
+  const list = T.msgs.filter(m => !only || m.group || m.priv || m.eigen).slice(-120);
+  el.innerHTML = list.map((m, i) => {
+    const c = parseCoord(m.text);
+    return `<li class="tmsg${m.eigen ? ' me' : ''}"><div class="th">${m.group ? '🔒' : m.priv ? '✉️' : '🌍'} <b>${esc(m.name)}</b> <small>${new Date(m.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</small></div>
+      <div class="tt">${esc(m.text)}</div>${c ? `<button data-tgo="${i}">🎯 als Ziel</button>` : ''}</li>`;
+  }).join('') || '<li class="empty">Noch keine Nachrichten der letzten 24 h.</li>';
+  el.querySelectorAll('[data-tgo]').forEach(b => { b.onclick = () => { const m = list[+b.dataset.tgo], c = parseCoord(m.text); setTarget({ kind: 'wpt', geocode: '', lat: c.lat, lon: c.lon, label: '💬 ' + m.name, name: m.name }); }; });
+  el.scrollTop = el.scrollHeight;
+}
+async function talkSend(text) {
+  const T = S.talk, X = NX();
+  text = String(text || '').trim(); if (!text) return;
+  if (!T.pool || !T.sk) throw new Error('b:con talk ist aus (Einstellungen)');
+  const body = JSON.stringify({ n: talkRufname(), t: text.slice(0, 500), p: 0 }); // übers Netz nie Durchsage
+  const tags = X.regionTags(S.set.talkPlz).concat([['alt', 'b:con-Chat'], ['expiration', String(Math.floor(Date.now() / 1000) + 86400)]]);
+  let content = body;
+  if (T.group) { content = await X.nip44Encrypt(T.group.ck, body); tags.push(['gruppe', T.group.kennung]); }
+  if (!S.set.talkPlz && !T.group) throw new Error('PLZ fehlt (Einstellungen) – ohne Region oder Gruppe findet niemand die Nachricht');
+  const ev = await X.finishEvent({ kind: 4423, tags, content }, T.sk);
+  const res = await T.pool.publish(ev);
+  const ok = res.filter(r => r.ok).length;
+  if (!ok) throw new Error('kein Relay hat angenommen' + (res[0] ? ': ' + (res[0].msg || '') : ''));
+  await talkEvent(ev); // eigenes Echo sofort anzeigen
+  return ok;
+}
+function showTalk() {
+  if (!S.set.talkOn) return toast('b:con talk in den Einstellungen einschalten');
+  const T = S.talk; T.unread = 0; updateTalkBadge();
+  const c = curCache(), here = S.pos ? `📍 ${fmtCoord(S.pos.lat, S.pos.lon)} ±${Math.round(S.pos.acc)} m` : '';
+  openSheet('💬 b:con talk', `
+    <p class="sub" id="talkStatus"></p>
+    ${S.set.talkPw ? `<label class="f c"><input type="checkbox" id="tOnly" ${S.set.talkOnlyGroup ? 'checked' : ''}><span>nur Gruppe anzeigen</span></label>` : ''}
+    <ul class="tlist" id="talkList"></ul>
+    <div class="tsend"><input id="tText" type="text" maxlength="500" placeholder="Nachricht …"><button id="tSend">➤</button></div>
+    <div class="tools"><button data-q="pos">📍 Standort</button>${c ? '<button data-q="found">✅ Gefunden</button>' : ''}${S.target ? '<button data-q="ziel">🎯 Ziel teilen</button>' : ''}<button data-q="help">🙋 Hilfe</button></div>
+    <p class="sub">Über öffentliche Nostr-Relays, Nachrichten verfallen nach 24 h. ${S.talk.group ? 'Gruppe: verschlüsselt (NIP-44).' : 'Offen: jeder in der Region kann mitlesen.'} b:con ist kein Notrufsystem.</p>`, b => {
+    talkRenderStatus(); talkRenderList();
+    const send = txt => run(async () => { const n = await talkSend(txt); b.querySelector('#tText').value = ''; toast(`💬 gesendet (${n} Relay${n > 1 ? 's' : ''})`); });
+    b.querySelector('#tSend').onclick = () => send(b.querySelector('#tText').value);
+    b.querySelector('#tText').onkeydown = e => { if (e.key === 'Enter') send(e.target.value); };
+    const o = b.querySelector('#tOnly'); if (o) o.onchange = () => { S.set.talkOnlyGroup = o.checked; saveSettings(); talkRenderList(); };
+    b.querySelectorAll('[data-q]').forEach(q => {
+      q.onclick = () => {
+        const k = q.dataset.q;
+        if (k === 'pos') { if (!here) return toast('Noch keine GPS-Position'); send(here + (c ? ` (bei ${c.geocode})` : '')); }
+        if (k === 'found') send(`✅ ${c.geocode} ${c.name} gefunden`);
+        if (k === 'ziel') send(`🎯 Ziel: ${S.target.label || S.target.name || ''} ${fmtCoord(S.target.lat, S.target.lon)}`);
+        if (k === 'help') send(`🙋 Brauche Hilfe${c ? ' bei ' + c.geocode : ''}${here ? ' – ' + here : ''}`);
+      };
+    });
+  });
+}
+function drawTalkPos() {
+  if (!S.map || !S.L.talk) return;
+  S.L.talk.clearLayers();
+  const now = Date.now();
+  for (const p of Object.values(S.talk.pos)) {
+    if (now - p.ts > 3 * 3600000) continue;
+    window.L.marker([p.lat, p.lon], { icon: window.L.divIcon({ className: 'talkPos', html: '💬 ' + esc(p.name), iconSize: null }) })
+      .bindPopup(`${esc(p.name)} · ${new Date(p.ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`).addTo(S.L.talk);
+  }
 }
 
 /* ---------- Offline vorbereiten ---------- */
@@ -1760,7 +1966,7 @@ async function showOffline() {
 function tourCandidate(c, exclude) {
   if (c.found || c.disabled || c.archived || c.geocode === exclude) return false;
   if (c.type === 'mystery' && !c.corrected) return false;                          // ungelöstes Rätsel
-  if (S.set.skipGear && missingGear(c, S.set, S.ai.get(c.geocode)).length) return false; // Ausrüstung fehlt
+  if (S.set.skipGear && missingGear(c, S.set, S.ai.get(c.geocode), true).length) return false; // Ausrüstung fehlt (hart)
   return true;
 }
 function makeTour(exclude) {
@@ -1801,7 +2007,10 @@ function showTour() {
     return `<li class="row${c.found ? ' found' : ''}" data-g="${esc(c.geocode)}"><span class="tnr">${i + 1}</span><div class="grow"><b>${esc(c.name)}</b><small>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${gearBadge(c)}</small></div><span class="dd">+${fmtDist(d)}<br><small>${fmtDist(sum)}</small></span></li>`;
   }).join('');
   if (S.tour.loop && pts.length) sum += haversine(prev.lat, prev.lon, S.tour.start.lat, S.tour.start.lon);
-  openSheet(`🗺️ Tour (${pts.length})`, `
+  const pack = new Map();
+  pts.forEach(c => toolsOf(c, S.ai.get(c.geocode)).forEach(a => { const e = pack.get(a.key) || { icon: a.icon, label: a.label.replace(' (aus Text)', ''), n: 0 }; e.n++; pack.set(a.key, e); }));
+  const packHtml = pack.size ? `<p class="sub">🎒 Einpacken: ${[...pack.entries()].map(([k, e]) => `${e.icon} ${esc(e.label)} (${e.n})${S.set['gear_' + k] === false ? ' ✗' : ''}`).join(' · ')}</p>` : '';
+  openSheet(`🗺️ Tour (${pts.length})`, `${packHtml}
     <p class="sub">Reihenfolge ohne Hin und Her (Luftlinie, Kreuzungen entfernt). Gesamt ca. ${fmtDist(sum)} Luftlinie${S.tour.loop ? ', zurück zum Start' : ''} – zu Fuß wird es mehr.</p>
     <div class="two"><label class="f"><span>Umkreis</span><select id="tR"><option value="1000">1 km</option><option value="2000">2 km</option><option value="3000">3 km</option><option value="5000">5 km</option></select></label>
       <label class="f c"><input type="checkbox" id="tL" ${S.set.tourLoop ? 'checked' : ''}><span>Rundtour</span></label></div>
@@ -1900,9 +2109,17 @@ function showSettings() {
     ${chk('night', 'Nachtmodus (rote Anzeige, Reflektorsuche)')}
     ${f('stepLen', 'Schrittlänge für Peilungen (m)', 'number', 'min="0.3" max="1.5" step="0.01"')}
     ${f('declination', 'Missweisung für Kompasswerte (°, Ost +; Standard 4 – für deinen Ort prüfen)', 'number', 'min="-30" max="30" step="0.1"')}
+    <h4>💬 b:con talk (Nostr, öffentliche Relays)</h4>
+    ${chk('talkOn', 'b:con talk einschalten')}
+    ${f('talkName', 'Rufname (bis 6 Zeichen A–Z, 0–9)')}
+    ${f('talkPlz', 'PLZ für die Region (z. B. 86157)', 'text', 'inputmode="numeric" maxlength="5"')}
+    <label class="f"><span>Reichweite: mitlesen in</span><select data-k="talkScope"><option value="1">PLZ-Bereich 1-stellig (DE8…)</option><option value="2">2-stellig (DE86…)</option><option value="3">3-stellig (DE861…)</option><option value="5">genau diese PLZ</option></select></label>
+    ${f('talkPw', 'Gruppen-Passwort (leer = offen in der Region)', 'password')}
+    ${f('talkRelays', 'Relays (Leerzeichen getrennt)')}
     <h4>Meine Ausrüstung</h4>
-    ${ATTRS.filter(a => a[3]).map(a => chk('gear_' + a[0], a[1] + ' ' + a[2].replace(/ nötig$/, ''))).join('')}
-    ${TEXT_TOOLS.filter(t => t[0] !== 'wading').map(t => chk('gear_' + t[0], t[1] + ' ' + t[2] + ' <small>(erkannt aus Hint, Listing, KI)</small>')).join('')}
+    <p class="sub">Erkannt aus Attributen und aus Hint, Listing und KI-Suchhilfe. ❗ = ohne das geht es nicht, 🎒 = einpacken.</p>
+    ${GEAR.map(g => chk('gear_' + g[0], `${g[1]} ${g[2]}${g[3] ? '' : ' <small>(hilfreich)</small>'}`)).join('')}
+    ${ATTRS.filter(a => a[3] && !GEAR.some(g => g[0] === a[0])).map(a => chk('gear_' + a[0], a[1] + ' ' + a[2].replace(/ nötig$/, ''))).join('')}
     ${chk('skipGear', '„Gefunden & weiter“ überspringt Caches, für die Ausrüstung fehlt')}
     <h4>Routing (Valhalla)</h4>
     ${f('routeUrl', 'Routing-Adresse: ./api/route.php (über deinen Server) oder direkt https://…/ (Valhalla mit HTTPS)')}
@@ -1929,6 +2146,7 @@ function showSettings() {
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
         if (k === 'mapDark') applyMapDark();
         if (k === 'night') applyNight();
+        if (/^talk(On|Plz|Scope|Pw|Relays)$/.test(k)) { clearTimeout(S.talkT); S.talkT = setTimeout(() => run(initTalk), 800); }
         if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };
     });
@@ -1975,11 +2193,13 @@ async function start() {
 async function init() {
   document.body.dataset.mode = 'cam';
   await loadAll().catch(e => console.error(e));
-  renderTop(); updateButtons(); renderStage(); applyMapDark(); setInterval(applyMapDark, 60000); applyNight();
+  renderTop(); updateButtons(); renderStage(); applyMapDark(); setInterval(applyMapDark, 60000); applyNight(); run(initTalk);
   $('#bStart').onclick = () => run(start);
   $('#bList').onclick = () => showList();
   $('#bRoute').onclick = toggleRouting;
   $('#bNight').onclick = toggleNight;
+  $('#bTalk').onclick = showTalk;
+  $('#cam').addEventListener('click', onCamTap);
   $('#top').onclick = e => { if (!e.target.closest('button')) showInfo(); };
   $('#bHint').onclick = showInfo;
   $('#bLogs').onclick = showLogs;
@@ -2003,5 +2223,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, findBrightSpots, colorName, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, screenRay, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, GEAR_HARD, findBrightSpots, mergeSpots, colorName, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };
