@@ -234,6 +234,15 @@ function importCgeo(exec, maxLogs) {
       }
     }
   }
+  if (tables.includes('cg_attributes')) {
+    const ac = cols('cg_attributes');
+    if (ac.includes('geocode') && ac.includes('attribute')) {
+      for (const row of q('SELECT geocode, attribute FROM cg_attributes').values) {
+        const c = caches.get(row[0]), a = c && mapAttr(row[1]);
+        if (a) (c.attrs = c.attrs || []).push(a);
+      }
+    }
+  }
   if (tables.includes('cg_waypoints')) {
     const wc = cols('cg_waypoints');
     const wsel = ['geocode', 'name', 'latitude', 'longitude', 'type', 'prefix', 'note'].filter(c => wc.includes(c));
@@ -269,6 +278,96 @@ function nearestOsm(els, key, value, lat, lon) {
   }
   return best;
 }
+
+/* --- Cache-Attribute: GC-Nummer (GPX), c:geo-Rohname, Opencaching-Name → einheitlicher Schlüssel --- */
+const ATTRS = [ // Schlüssel, Symbol, Text, Ausrüstung?, GC-Nummer, Muster
+  ['flashlight', '🔦', 'Taschenlampe nötig', true, 44, /flashlight|taschenlampe/i],
+  ['uv', '🟣', 'UV-Lampe nötig', true, 48, /(^|[^a-z])uv([^a-z]|$)|uv-?(licht|lampe)/i],
+  ['special_tool', '🔧', 'Spezialwerkzeug nötig', true, 51, /s-tool|special.?tool|spezialwerkzeug|werkzeug/i],
+  ['tree_climbing', '🌳', 'Baumklettern', true, 64, /tree.?climb|baumklett/i],
+  ['climbing_gear', '🧗', 'Kletterausrüstung nötig', true, 3, /rappel|climbing.?gear|kletterausr|abseil/i],
+  ['climbing', '🧗', 'Klettern (schwierig)', true, 10, /^climbing|difficult.?climb|klettern/i],
+  ['boat', '🚣', 'Boot nötig', true, 4, /boat|boot/i],
+  ['scuba', '🤿', 'Tauchausrüstung nötig', true, 5, /scuba|tauch/i],
+  ['wading', '🥾', 'Waten, nasse Füße', true, 11, /wading|waten|nasse f/i],
+  ['swimming', '🏊', 'Schwimmen', true, 12, /swimming|schwimm/i],
+  ['night', '🌙', 'Nachtcache', false, 52, /night.?cache|nachtcache|nur nachts/i],
+  ['night_rec', '🌃', 'nachts empfohlen', false, 14, /^night(_|$)|recommended at night|nachts/i],
+  ['field_puzzle', '🧩', 'Rätsel vor Ort', false, 47, /field.?puzzle|rätsel vor ort|feldrätsel/i],
+  ['ticks', '🕷️', 'Zecken', false, 19, /ticks|zecken/i],
+  ['thorns', '🌵', 'Dornen', false, 39, /thorn|dornen/i],
+  ['poison', '☠️', 'Giftpflanzen', false, 17, /poison|giftpfl/i],
+  ['cliff', '⛰️', 'Absturz/Steinschlag', false, 21, /cliff|absturz|steinschl/i],
+  ['danger', '⚠️', 'gefährliches Gelände', false, 23, /danger|gefährl/i],
+  ['hunting', '🎯', 'Jagdgebiet', false, 22, /hunting|jagd/i],
+  ['stealth', '🤫', 'unauffällig vorgehen', false, 40, /stealth|unauffällig/i],
+  ['teamwork', '👥', 'Teamarbeit', false, 66, /teamwork|teamarbeit/i],
+  ['fee', '💶', 'Gebühr', false, 2, /fee|gebühr/i],
+  ['parking', '🅿️', 'Parkplatz', false, 25, /parking|parkpl/i],
+  ['public', '🚌', 'ÖPNV in der Nähe', false, 26, /public|öpnv|öffentl/i],
+  ['available', '🕒', 'rund um die Uhr', false, 13, /available|24.?7|jederzeit|rund um die uhr/i],
+  ['wheelchair', '♿', 'rollstuhlgeeignet', false, 24, /wheelchair|rollstuhl/i],
+  ['kids', '👶', 'kindgerecht', false, 6, /kids|kinder/i],
+  ['dogs', '🐕', 'Hunde erlaubt', false, 1, /dogs|hunde/i],
+  ['winter', '❄️', 'wintertauglich', false, 15, /winter/i],
+  ['hike_long', '🥾', 'lange Wanderung', false, 57, /hike_long|long hike|lange wander/i],
+  ['seasonal', '📅', 'nur saisonal', false, 62, /seasonal|saison/i]
+];
+function mapAttr(raw, gcId, inc) {
+  let a = null;
+  if (gcId != null && gcId !== '') a = ATTRS.find(x => x[4] === +gcId);
+  const r = String(raw || '').trim();
+  if (!a && r) a = ATTRS.find(x => x[5].test(r.replace(/[_-](yes|no)$/i, '')));
+  const neg = inc != null ? !+inc : /[_-]no$|\bnicht\b|\bkein/i.test(r);
+  if (!a) return r ? { key: 'x:' + r.toLowerCase(), icon: '•', label: r.replace(/[_-](yes|no)$/i, ''), tool: false, yes: !neg } : null;
+  return { key: a[0], icon: a[1], label: (neg ? 'nicht: ' : '') + a[2], tool: a[3] && !neg, yes: !neg };
+}
+function toolAttrs(c) { return (c.attrs || []).filter(a => a.tool); }
+function missingGear(c, set) { return toolAttrs(c).filter(a => set['gear_' + a.key] === false); }
+
+/* --- Reflektoren (Firetacks) im Kamerabild: kleine, sehr helle Flecken vor dunklem Grund --- */
+function findBrightSpots(px, w, h, o) {
+  o = o || {};
+  const N = w * h, Y = new Float32Array(N);
+  let sum = 0, sum2 = 0;
+  for (let i = 0; i < N; i++) { const y = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2]; Y[i] = y; sum += y; sum2 += y * y; }
+  const mean = sum / N, sd = Math.sqrt(Math.max(0, sum2 / N - mean * mean));
+  const thr = Math.max(o.min || 200, mean + (o.k || 3.5) * sd), maxArea = Math.max(4, N * (o.maxFrac || 0.004));
+  const seen = new Uint8Array(N), spots = [], stack = [];
+  for (let s0 = 0; s0 < N; s0++) {
+    if (seen[s0] || Y[s0] < thr) continue;
+    let n = 0, sx = 0, sy = 0, sr = 0, sg = 0, sb = 0, mx = 0, x0 = w, x1 = 0, y0 = h, y1 = 0;
+    stack.push(s0); seen[s0] = 1;
+    while (stack.length) {
+      const i = stack.pop(), x = i % w, y = (i / w) | 0;
+      n++; sx += x; sy += y; sr += px[4 * i]; sg += px[4 * i + 1]; sb += px[4 * i + 2]; if (Y[i] > mx) mx = Y[i];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const j of [i - 1, i + 1, i - w, i + w]) {
+        if (j < 0 || j >= N || seen[j] || Y[j] < thr) continue;
+        if ((j === i - 1 && x === 0) || (j === i + 1 && x === w - 1)) continue;
+        seen[j] = 1; stack.push(j);
+      }
+    }
+    if (n > maxArea) continue;                                   // große helle Fläche (Laterne, Himmel) ist kein Reflektor
+    let bs = 0, bn = 0; const m = 3;                             // Hintergrund: Rahmen um den Fleck
+    for (let y = Math.max(0, y0 - m); y <= Math.min(h - 1, y1 + m); y++) for (let x = Math.max(0, x0 - m); x <= Math.min(w - 1, x1 + m); x++) {
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) continue; bs += Y[y * w + x]; bn++;
+    }
+    const bg = bn ? bs / bn : mean, contrast = mx - bg;
+    if (contrast < (o.contrast || 70)) continue;
+    spots.push({ x: sx / n, y: sy / n, r: Math.max(1, Math.max(x1 - x0, y1 - y0) / 2), n, rgb: [sr / n, sg / n, sb / n], score: contrast * Math.sqrt(n) });
+  }
+  return spots.sort((a, b) => b.score - a.score).slice(0, o.max || 8);
+}
+function colorName(rgb) {
+  const [r, g, b] = rgb, mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx - mn < 45) return 'weiß';
+  const hue = mx === r ? ((g - b) / (mx - mn) * 60 + 360) % 360 : mx === g ? (b - r) / (mx - mn) * 60 + 120 : (r - g) / (mx - mn) * 60 + 240;
+  return hue < 20 || hue >= 330 ? 'rot' : hue < 45 ? 'orange' : hue < 70 ? 'gelb' : hue < 170 ? 'grün' : hue < 260 ? 'blau' : 'violett';
+}
+/* Ansagen: größte Stufe unterhalb der Entfernung */
+const ANN_STEPS = [2000, 1000, 500, 200, 100, 50, 20, 10];
+function annStepBelow(d) { return ANN_STEPS.find(x => x < d) == null ? null : ANN_STEPS.find(x => x < d); }
 
 /* --- Sonnenhöhe in Grad (Näherung, auf ca. 1° genau) – für „Karte dunkel: automatisch“ --- */
 function sunElevation(lat, lon, date) {
@@ -416,10 +515,14 @@ const DEFAULTS = {
   fovH: 50, phoneH: 1.4, compassOffset: 0, sensor: 'auto', autoMode: true, maxLogs: 40,
   apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
+  night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
+  gear_flashlight: true, gear_uv: false, gear_special_tool: false, gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false,
+  gear_boat: false, gear_scuba: false, gear_wading: false, gear_swimming: false,
   routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
-  set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false, pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
+  set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false,
+  ann: {}, annMan: {}, lockPrev: false, lockTs: 0, spots: [], peil: null, pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
   target: null, mode: 'cam', modeLock: null, stream: null, track: null, torch: false, dir: null,
   route: null, steer: null, routeBusy: false, routeTs: 0, offCount: 0,
   map: null, L: {}, follow: true, wake: null, lastFrame: 0, lastMap: 0, sensor: null, started: false
@@ -555,7 +658,8 @@ function parseGpx(text, maxLogs) {
         hint: txt(gc, 'encoded_hints'), owner: txt(gc, 'placed_by') || txt(gc, 'owner'),
         found: /found/i.test(txt(w, 'sym')), disabled: gc.getAttribute('available') === 'False', archived: gc.getAttribute('archived') === 'True',
         note: '', corrected: false, logs, wpts: [], src: 'gpx',
-        desc: [txt(gc, 'short_description'), txt(gc, 'long_description')].filter(Boolean).join('\n\n')
+        desc: [txt(gc, 'short_description'), txt(gc, 'long_description')].filter(Boolean).join('\n\n'),
+        attrs: kids(kid(gc, 'attributes'), 'attribute').map(a => mapAttr(a.textContent.trim(), a.getAttribute('id'), a.getAttribute('inc'))).filter(Boolean)
       });
     } else {
       const par = w.getElementsByTagNameNS('*', 'Parent')[0];
@@ -639,6 +743,7 @@ function mapOkapi(c) {
     hint: c.hint2 || '', owner: c.owner ? c.owner.username : '', found: !!c.is_found,
     disabled: c.status === 'Temporarily unavailable', archived: c.status === 'Archived', note: c.gc_code ? 'auch bei GC: ' + c.gc_code : '', corrected: false,
     desc: [c.short_description, c.description].filter(Boolean).join('\n\n'),
+    attrs: (c.attrnames || []).map(n => mapAttr(n)).filter(Boolean),
     logs: (c.latest_logs || []).map(l => ({ date: toMs(l.date), type: l.type, author: l.user ? l.user.username : '', text: stripHtml(l.comment) })),
     wpts: (c.alt_wpts || []).map(w => { const [a, b] = String(w.location).split('|').map(Number); return { name: w.description || w.name, prefix: w.name, lat: a, lon: b, type: w.type_name || w.type || '', note: '' }; }),
     src: 'oc'
@@ -662,7 +767,7 @@ async function loadOcNearby() {
   for (let i = 0; i < codes.length; i += 50) {
     const g = await okapi('caches/geocaches', {
       cache_codes: codes.slice(i, i + 50).join('|'),
-      fields: 'code|name|location|type|status|difficulty|terrain|size2|hint2|latest_logs|alt_wpts|owner|gc_code|short_description|description' + (uuid ? '|is_found' : ''),
+      fields: 'code|name|location|type|status|difficulty|terrain|size2|hint2|latest_logs|alt_wpts|owner|gc_code|short_description|description|attrnames' + (uuid ? '|is_found' : ''),
       lpc: S.set.maxLogs, log_fields: 'date|user|type|comment', langpref: 'de|en', user_uuid: uuid || ''
     });
     for (const c of Object.values(g)) if (c) out.push(mapOkapi(c));
@@ -740,7 +845,7 @@ function onPosRoute() {
   if (R.final) S.steer = null;
   else { const q = routePointAt(R.pts, R.cum, loc.along + S.set.lookahead); S.steer = { lat: q[0], lon: q[1] }; }
   R.next = null;
-  for (const m of R.man) if (m.i > loc.i) { R.next = { txt: m.txt, d: Math.max(0, R.cum[m.i] - loc.along) }; break; }
+  for (const m of R.man) if (m.i > loc.i) { R.next = { txt: m.txt, d: Math.max(0, R.cum[m.i] - loc.along), i: m.i }; break; }
 }
 function routeText(R, dist, brg) {
   if (R.loc && R.loc.off > R.offLim) return `⚠️ ${fmtDist(R.loc.off)} neben der Route – berechne neu …`;
@@ -763,8 +868,17 @@ function drawRoute() {
 function targetCache(geocode) {
   const c = S.caches.get(geocode); if (!c) return;
   setTarget({ kind: 'cache', geocode, lat: c.lat, lon: c.lon, name: c.name });
+  const miss = missingGear(c, S.set), night = (c.attrs || []).some(a => a.yes && (a.key === 'night' || a.key === 'night_rec'));
+  if (miss.length) toast('❗ Ausrüstung: ' + miss.map(a => a.icon + ' ' + a.label).join(', '), 5000);
+  else if (night && !S.set.night) toast('🌙 Nachtcache – Nachtmodus mit 🌙 oben', 4000);
 }
 function curCache() { return S.target ? S.caches.get(S.target.geocode) : null; }
+/* Ausrüstung: Symbole der nötigen Werkzeuge, ❗ wenn dir etwas fehlt */
+function gearBadge(c) {
+  const t = toolAttrs(c); if (!t.length) return '';
+  const miss = missingGear(c, S.set);
+  return ' · ' + t.map(a => a.icon).join('') + (miss.length ? ' ❗' : '');
+}
 function renderTop() {
   const t = S.target, c = curCache();
   if (!t) { $('#tName').textContent = 'Kein Ziel – ☰ Liste öffnen'; $('#tSub').textContent = ''; return; }
@@ -774,7 +888,7 @@ function renderTop() {
   $('#tName').textContent = name;
   if (c) {
     const ti = TYPE_INFO[c.type] || TYPE_INFO.other;
-    $('#tSub').innerHTML = `<span class="dot" style="background:${ti[1]}"></span>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${c.disabled ? ' · ⛔ deaktiviert' : ''}`;
+    $('#tSub').innerHTML = `<span class="dot" style="background:${ti[1]}"></span>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${c.disabled ? ' · ⛔ deaktiviert' : ''}${gearBadge(c)}`;
   } else $('#tSub').textContent = fmtCoord(t.lat, t.lon);
 }
 
@@ -991,7 +1105,7 @@ function frame(now) {
   const sc = S.cols ? screenCols(S.cols, ang) : null;
   const head = sc ? (viewHeading(sc) + S.set.compassOffset + 360) % 360 : (p && p.heading != null && p.speed > 0.7 ? p.heading : null);
   const stale = S.cols && now - S.oriTs > 3000;
-  $('#status').textContent = `${S.cols ? (stale ? '⚠️ Kompass hängt' : S.oriSrc) : 'Kompass: fehlt'} · GPS ${p ? '±' + Math.round(p.acc) + ' m' : 'wartet …'}`;
+  $('#status').textContent = `${navigator.onLine ? '' : '📴 offline · '}${S.cols ? (stale ? '⚠️ Kompass hängt' : S.oriSrc) : 'Kompass: fehlt'} · GPS ${p ? '±' + Math.round(p.acc) + ' m' : 'wartet …'}`;
   if (!t || !p) {
     $('#dist').textContent = p ? '–' : 'GPS …'; $('#acc').textContent = ''; $('#dir').textContent = t ? '' : 'Kein Ziel';
     $('#marker').hidden = true; $('#edge').hidden = true; $('#near').hidden = true; return;
@@ -1026,6 +1140,8 @@ function frame(now) {
       $('#mLabel').textContent = aim === t ? fmtDist(dist) : '🧭 Weg'; $('#mLabel').style.top = (size / 2) + 'px';
       const lock = Math.hypot(pr.x - W / 2, pr.y - H / 2) < Math.min(W, H) * 0.07;
       $('#cross').classList.toggle('lock', lock);
+      if (lock && !S.lockPrev && now - S.lockTs > 1500) { buzz([40]); S.lockTs = now; }
+      S.lockPrev = lock;
     } else {
       mk.hidden = true; $('#cross').classList.remove('lock');
       ed.hidden = near;
@@ -1038,6 +1154,8 @@ function frame(now) {
     }
   } else { $('#marker').hidden = true; $('#edge').hidden = true; }
   if (S.mode === 'map' && now - S.lastMap > 250) { S.lastMap = now; updateMap(dist, head); }
+  announce(t, R ? R.rest : dist, R);
+  if (S.peil) updatePeilbar(sc);
 }
 
 /* ---------- Blätter: Liste ---------- */
@@ -1050,13 +1168,13 @@ function showList(filter = '') {
   const rows = list.slice(0, 300).map(c => {
     const ti = TYPE_INFO[c.type] || TYPE_INFO.other;
     return `<li class="row${c.found ? ' found' : ''}" data-g="${esc(c.geocode)}"><span class="dot" style="background:${ti[1]}"></span>
-      <div class="grow"><b>${esc(c.name)}</b><small>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${S.ai.has(c.geocode) ? ' · 🤖' : ''}</small></div>
+      <div class="grow"><b>${esc(c.name)}</b><small>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${S.ai.has(c.geocode) ? ' · 🤖' : ''}${gearBadge(c)}</small></div>
       <span class="dd">${p ? fmtDist(c._d) + '<br>' + compassName(c._b) : ''}</span></li>`;
   }).join('');
   openSheet(`Caches (${S.caches.size})`, `
     <div class="tools">
       <button id="lFolder">📁 c:geo-Backup laden</button><button id="lFile">📄 Datei wählen</button>
-      <button id="lOc">🟢 OC in der Nähe</button><button id="lAi">🤖 Alle auswerten</button>
+      <button id="lOc">🟢 OC in der Nähe</button><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button>
       <button id="lSet">⚙️ Einstellungen</button><button id="lDiag">🩺 Diagnose</button>
     </div>
     <input id="lFilter" type="search" placeholder="Suchen (Name oder Code)" value="${esc(filter)}">
@@ -1064,6 +1182,8 @@ function showList(filter = '') {
     b.querySelector('#lFolder').onclick = () => run(loadNewestBackup);
     b.querySelector('#lFile').onclick = pickFile;
     b.querySelector('#lOc').onclick = () => run(loadOcNearby);
+    b.querySelector('#lPeil').onclick = () => showPeilung();
+    b.querySelector('#lOff').onclick = () => run(showOffline);
     b.querySelector('#lAi').onclick = () => run(aiAll);
     b.querySelector('#lSet').onclick = showSettings;
     b.querySelector('#lDiag').onclick = showDiag;
@@ -1079,13 +1199,16 @@ function showInfo() {
   openSheet(c.name, `
     <p class="sub">${esc(c.geocode)} · ${(TYPE_INFO[c.type] || TYPE_INFO.other)[0]} · D${c.d || '?'}/T${c.t || '?'} ${c.size ? '· ' + esc(c.size) : ''} ${c.owner ? '· von ' + esc(c.owner) : ''}</p>
     <p class="coord">${fmtCoord(c.lat, c.lon)}${c.corrected ? ' (korrigiert)' : ''}</p>
+    ${toolAttrs(c).length ? `<h4>🧰 Ausrüstung</h4><ul class="list">${toolAttrs(c).map(a => { const has = S.set['gear_' + a.key] !== false; return `<li class="gear ${has ? 'ok' : 'miss'}">${a.icon} <b>${esc(a.label)}</b> <small>${has ? '✓ hast du' : '✗ fehlt laut Einstellungen'}</small></li>`; }).join('')}</ul>` : ''}
+    ${(c.attrs || []).filter(a => !a.tool).length ? `<h4>Attribute</h4><div class="chips">${(c.attrs || []).filter(a => !a.tool).map(a => `<span class="chip${a.yes ? '' : ' neg'}">${a.icon} ${esc(a.label)}</span>`).join('')}</div>` : ''}
     <h4>Hint</h4>
     <div id="hint" class="hint blur">${esc(htmlText(c.hint) || '– kein Hint –')}</div>
     <div class="tools"><button id="hShow">👁 Anzeigen</button><button id="hRot">🔤 ROT13</button><button id="hCache">🎯 Cache als Ziel</button></div>
     ${c.note ? `<h4>Persönliche Notiz</h4><div class="hint">${esc(htmlText(c.note))}</div>` : ''}
     ${wp ? `<h4>Wegpunkte</h4><ul class="list">${wp}</ul>` : ''}
-    <div class="tools"><button id="hMulti">🧩 Stationen</button><button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
+    <div class="tools"><button id="hMulti">🧩 Stationen</button><button id="hPeil">📐 Peilung</button><button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
     b.querySelector('#hMulti').onclick = () => run(() => showMulti(c));
+    b.querySelector('#hPeil').onclick = () => showPeilung();
     const h = b.querySelector('#hint');
     b.querySelector('#hShow').onclick = () => h.classList.toggle('blur');
     b.querySelector('#hRot').onclick = () => { h.textContent = rot13(h.textContent); h.classList.remove('blur'); };
@@ -1149,7 +1272,7 @@ async function kiCall(body) {
 }
 async function aiAnalyze(c) {
   const body = {
-    geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], d: c.d, t: c.t, size: c.size, hint: htmlText(c.hint), lat: c.lat, lon: c.lon,
+    geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], d: c.d, t: c.t, size: c.size, hint: htmlText(c.hint), lat: c.lat, lon: c.lon, attribute: (c.attrs || []).map(a => a.label).join(', '),
     logs: (c.logs || []).slice(0, 40).map(l => ({ date: l.date ? new Date(l.date).toISOString().slice(0, 10) : '', type: logTypeInfo(l.type)[0], author: l.author, text: htmlText(l.text).slice(0, 900) }))
   };
   const j = await kiCall(body);
@@ -1241,6 +1364,7 @@ async function aiMulti(c) {
   const base = listingBase(c);
   const j = await kiCall({
     aktion: 'multi', geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], start: fmtCoord(base.lat, base.lon),
+    attribute: (c.attrs || []).map(a => a.label).join(', '),
     beschreibung: desc.slice(0, 16000),
     wegpunkte: (c.wpts || []).map(w => ({ prefix: w.prefix, name: w.name, coord: w.lat != null ? fmtCoord(w.lat, w.lon) : '', note: htmlText(w.note || '').slice(0, 400) }))
   });
@@ -1407,6 +1531,218 @@ async function showFotoFrage(c, preset) {
   });
 }
 
+/* ---------- Ansagen und Vibration ---------- */
+function buzz(p) { if (S.set.vibrate && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { /* egal */ } }
+function say(t) {
+  if (!S.set.speak || !('speechSynthesis' in window)) return;
+  try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'de-DE'; u.rate = 1.05; speechSynthesis.speak(u); } catch (e) { /* egal */ }
+}
+function sayDist(m) { return m >= 1000 ? `${String(m / 1000).replace('.', ',')} Kilometer` : `${m} Meter`; }
+function announce(t, d, R) {
+  if (!S.set.speak && !S.set.vibrate) return;
+  const key = targetKey(t);
+  if (S.ann.key !== key) { S.ann = { key, next: annStepBelow(d), last: null }; S.annMan = {}; return; }
+  // Abstände zum Ziel: 2 km, 1 km, 500, 200, 100, 50, 20, 10 m
+  if (S.ann.next != null && d < S.ann.next * 0.97) {
+    const th = S.ann.next;
+    S.ann.last = th; S.ann.next = annStepBelow(d);
+    say(th <= 10 ? 'Noch 10 Meter. Ziel in der Nähe.' : `Noch ${sayDist(th)}`);
+    buzz(th >= 500 ? [80] : th >= 100 ? [80, 80, 80] : [150, 80, 150, 80, 150]);
+  } else if (S.ann.last != null && d > S.ann.last * 1.3) S.ann = { key, next: annStepBelow(d), last: null }; // wieder entfernt → neu scharf
+  // Abzweigungen mit Route: vorher ankündigen, dann „Jetzt“
+  if (R && R.next && !R.final && !(R.loc && R.loc.off > R.offLim)) {
+    const fast = S.pos && S.pos.speed > 6, far = fast ? 300 : 120, nearM = fast ? 40 : 20;
+    const k = R.key + ':' + R.next.i, st = S.annMan[k] || (S.annMan[k] = {});
+    const pat = /links/i.test(R.next.txt) ? [200, 100, 200] : /rechts/i.test(R.next.txt) ? [500] : [100];
+    if (!st.far && R.next.d <= far && R.next.d > nearM * 2) { st.far = true; say(`In ${Math.round(R.next.d / 10) * 10} Metern: ${R.next.txt}`); buzz(pat); }
+    if (!st.now && R.next.d <= nearM) { st.now = true; st.far = true; say('Jetzt: ' + R.next.txt); buzz(pat); }
+  }
+}
+
+/* ---------- Nachtmodus: rote Oberfläche + Reflektorsuche ---------- */
+function applyNight() {
+  document.body.classList.toggle('night', !!S.set.night);
+  $('#bNight').classList.toggle('on', !!S.set.night);
+  if (S.set.night) startSpotLoop(); else { S.spots = []; drawSpots(); }
+}
+function toggleNight() {
+  S.set.night = !S.set.night; saveSettings(); applyNight();
+  toast(S.set.night ? '🌙 Nachtmodus: rote Anzeige, Reflektorsuche im Kamerabild (Lampe an)' : 'Nachtmodus aus');
+}
+let _spotTimer, _spotCv;
+function startSpotLoop() {
+  if (_spotTimer) return;
+  _spotTimer = setInterval(() => {
+    if (!S.set.night) { clearInterval(_spotTimer); _spotTimer = null; return; }
+    const v = $('#cam');
+    if (S.mode !== 'cam' || !S.stream || !v.videoWidth || document.hidden) { if (S.spots.length) { S.spots = []; drawSpots(); } return; }
+    const w = 320, h = Math.round(320 * v.videoHeight / v.videoWidth);
+    _spotCv = _spotCv || document.createElement('canvas'); _spotCv.width = w; _spotCv.height = h;
+    const g = _spotCv.getContext('2d', { willReadFrequently: true });
+    g.drawImage(v, 0, 0, w, h);
+    S.spots = findBrightSpots(g.getImageData(0, 0, w, h).data, w, h).map(p => ({ ...p, fx: p.x / w, fy: p.y / h, fr: p.r / w }));
+    drawSpots();
+  }, 220);
+}
+function drawSpots() {
+  const cv = $('#spots'), v = $('#cam'), W = window.innerWidth, H = window.innerHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const info = $('#spotInfo');
+  if (!S.spots.length || !v.videoWidth) { info.hidden = !S.set.night || S.mode !== 'cam'; info.textContent = S.torch ? '✨ keine Reflektoren' : '✨ Lampe an für Reflektorsuche'; return; }
+  const k = Math.max(W / v.videoWidth, H / v.videoHeight), ox = (W - v.videoWidth * k) / 2, oy = (H - v.videoHeight * k) / 2; // object-fit: cover
+  g.lineWidth = 3; g.font = 'bold 14px system-ui'; g.textAlign = 'center';
+  S.spots.forEach((p, i) => {
+    const x = ox + p.fx * v.videoWidth * k, y = oy + p.fy * v.videoHeight * k, r = Math.max(14, p.fr * v.videoWidth * k * 2.5);
+    g.strokeStyle = i === 0 ? '#ffdc00' : 'rgba(255,220,0,.6)'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ffdc00'; g.fillText(colorName(p.rgb), x, y - r - 5);
+  });
+  info.hidden = false; info.textContent = `✨ ${S.spots.length} Reflektor${S.spots.length > 1 ? 'en' : ''}`;
+}
+
+/* ---------- Peilung / Projektion (auch Letterbox: Schritte, Kompasswert) ---------- */
+function startPeilMessen() { closeSheet(); S.peil = { deg: null, dist: null }; $('#peilbar').hidden = false; if (S.mode !== 'cam') toast('Handy senkrecht halten und das Ziel anvisieren'); }
+function updatePeilbar(sc) {
+  const el = $('#peilbar');
+  if (!sc) { el.innerHTML = '<b>📐 Peilen</b> – Kompass fehlt'; return; }
+  const deg = (viewHeading(sc) + S.set.compassOffset + 360) % 360, pitch = vecElev(camVec(sc));
+  const dist = pitch < -1.5 ? S.set.phoneH / Math.tan(-pitch * D2R) : null;
+  S.peil.deg = deg; S.peil.dist = dist && dist < 300 ? dist : null;
+  if (!el.dataset.ready) {
+    el.innerHTML = `<div><b>📐 Peilen</b> <span id="pbVal"></span></div><small>Fadenkreuz auf das Ziel. Für die Entfernung auf den Fuß des Ziels zielen (Handyhöhe ${String(S.set.phoneH).replace('.', ',')} m).</small>
+      <div class="tools"><button id="pbDeg">Richtung übernehmen</button><button id="pbBoth">Richtung + Entfernung</button><button id="pbX">✕</button></div>`;
+    el.dataset.ready = '1';
+    const done = withDist => { const p = S.peil; S.peil = null; el.hidden = true; delete el.dataset.ready; showPeilung({ deg: Math.round(p.deg), dist: withDist && p.dist ? Math.round(p.dist) : null }); };
+    el.querySelector('#pbDeg').onclick = () => done(false);
+    el.querySelector('#pbBoth').onclick = () => done(true);
+    el.querySelector('#pbX').onclick = () => { S.peil = null; el.hidden = true; delete el.dataset.ready; };
+  }
+  el.querySelector('#pbVal').textContent = `${Math.round(deg)}° ${compassName(deg)} · ${S.peil.dist ? 'ca. ' + Math.round(S.peil.dist) + ' m' : 'Entfernung: auf den Fuß zielen'}`;
+}
+function showPeilung(pre) {
+  pre = pre || {};
+  const c = curCache(), last = S.peilForm || {};
+  openSheet('📐 Peilung / Projektion', `
+    <label class="f"><span>Von</span><select id="pFrom"><option value="me">meinem Standort</option><option value="target">dem aktuellen Ziel</option><option value="coord">Koordinaten …</option></select></label>
+    <input id="pCoord" type="text" placeholder="N 48° 22.123 E 010° 53.456" hidden>
+    <div class="two"><label class="f"><span>Entfernung</span><input id="pDist" inputmode="decimal" value="${esc(pre.dist != null ? pre.dist : last.dist || '')}"></label>
+      <label class="f"><span>Einheit</span><select id="pUnit"><option value="m">Meter</option><option value="steps">Schritte (${String(S.set.stepLen).replace('.', ',')} m)</option><option value="km">km</option><option value="ft">Fuß</option></select></label></div>
+    <div class="two"><label class="f"><span>Richtung (°)</span><input id="pDeg" inputmode="decimal" value="${esc(pre.deg != null ? pre.deg : last.deg || '')}"></label>
+      <label class="f c"><input type="checkbox" id="pMag" ${last.mag && pre.deg == null ? 'checked' : ''}><span>Kompasswert (missweisend, +${String(S.set.declination).replace('.', ',')}°)</span></label></div>
+    <div class="tools"><button id="pMeasure">📷 Mit der Kamera peilen</button><button id="pCalc">➜ Berechnen</button></div>
+    <div id="pRes"></div>`, b => {
+    const $b = q => b.querySelector(q);
+    $b('#pFrom').value = last.from || 'me'; $b('#pUnit').value = last.unit || 'm'; $b('#pCoord').value = last.coord || '';
+    $b('#pCoord').hidden = $b('#pFrom').value !== 'coord';
+    $b('#pFrom').onchange = () => { $b('#pCoord').hidden = $b('#pFrom').value !== 'coord'; };
+    $b('#pMeasure').onclick = startPeilMessen;
+    const calc = () => {
+      const f = { from: $b('#pFrom').value, coord: $b('#pCoord').value, dist: $b('#pDist').value, unit: $b('#pUnit').value, deg: $b('#pDeg').value, mag: $b('#pMag').checked };
+      S.peilForm = f;
+      const start = f.from === 'me' ? S.pos : f.from === 'target' ? S.target : parseCoord(f.coord);
+      const dv = evalExpr(f.dist, {}).value, gv = evalExpr(f.deg, {}).value;
+      if (!start) return toast(f.from === 'me' ? 'Noch keine GPS-Position' : f.from === 'target' ? 'Kein Ziel' : 'Koordinaten nicht lesbar');
+      if (dv == null || gv == null) return toast('Entfernung und Richtung eintragen');
+      const m = dv * ({ m: 1, steps: S.set.stepLen, km: 1000, ft: 0.3048 }[f.unit] || 1), brg = ((gv + (f.mag ? S.set.declination : 0)) % 360 + 360) % 360;
+      const q = destPoint(start.lat, start.lon, m, brg), txt = fmtCoord(q.lat, q.lon);
+      $b('#pRes').innerHTML = `<div class="stn final"><div class="coord big">${txt}</div><small>${Math.round(m)} m in ${Math.round(brg)}° ${compassName(brg)}${f.mag ? ' (geografisch)' : ''}${S.pos ? ' · ' + fmtDist(haversine(S.pos.lat, S.pos.lon, q.lat, q.lon)) + ' von dir' : ''}</small>
+        <div class="tools"><button id="pGo">🎯 Als Ziel</button><button id="pCopy">📋 Kopieren</button>${c ? '<button id="pSave">💾 Als Wegpunkt</button>' : ''}</div></div>`;
+      $b('#pGo').onclick = () => setTarget({ kind: 'wpt', geocode: c ? c.geocode : '', lat: q.lat, lon: q.lon, label: `Peilung ${Math.round(m)} m / ${Math.round(brg)}°`, name: c ? c.name : 'Peilung' });
+      $b('#pCopy').onclick = () => navigator.clipboard.writeText(txt).then(() => toast('📋 ' + txt));
+      const sv = $b('#pSave');
+      if (sv) sv.onclick = () => run(async () => {
+        c.wpts = c.wpts || []; const n = c.wpts.filter(w => w.type === 'peilung').length + 1;
+        c.wpts.push({ name: `Peilung ${n}: ${f.dist} ${f.unit === 'steps' ? 'Schritte' : f.unit} / ${f.deg}°${f.mag ? ' (Kompass)' : ''}`, prefix: 'P' + n, lat: q.lat, lon: q.lon, type: 'peilung', note: '' });
+        await idbPut('caches', c); drawCacheMarkers(); toast('💾 als Wegpunkt P' + n + ' gespeichert');
+      });
+    };
+    $b('#pCalc').onclick = calc;
+    if (pre.deg != null) setTimeout(() => { if ($b('#pDist').value) calc(); }, 50);
+  });
+}
+
+/* ---------- Offline vorbereiten ---------- */
+function tileXY(lat, lon, z) {
+  const n = Math.pow(2, z), x = Math.floor((lon + 180) / 360 * n);
+  const y = Math.floor((1 - Math.log(Math.tan(lat * D2R) + 1 / Math.cos(lat * D2R)) / Math.PI) / 2 * n);
+  return [x, y];
+}
+async function tileCoverage(c, r) {
+  if (!('caches' in window)) return null;
+  const have = new Set((await (await caches.open('cv-tiles-v1')).keys()).map(k => k.url.replace(/^https:\/\/[a-c]?\.?tile/, 'https://tile')));
+  const dLa = r / 111320, dLo = r / (111320 * Math.cos(c.lat * D2R)), out = [];
+  for (const z of [15, 16, 17]) {
+    const [x0, y0] = tileXY(c.lat + dLa, c.lon - dLo, z), [x1, y1] = tileXY(c.lat - dLa, c.lon + dLo, z);
+    let n = 0, h = 0;
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) { n++; if (have.has(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`)) h++; }
+    out.push({ z, n, h });
+  }
+  return out;
+}
+async function showOffline() {
+  const ref = S.pos || S.target || (S.map ? { lat: S.map.getCenter().lat, lon: S.map.getCenter().lng } : null);
+  if (!ref) return toast('Erst GPS oder ein Ziel');
+  const cov = await tileCoverage(ref, 1000);
+  openSheet('📦 Offline vorbereiten', `
+    <p class="sub">Um ${S.pos ? 'deinen Standort' : 'das Ziel'}: Caches, KI-Auswertung und Stationen landen im Handy. Routing und neue KI-Fragen brauchen weiter Netz.</p>
+    <label class="f"><span>Umkreis</span><select id="oR"><option value="1000">1 km</option><option value="2000" selected>2 km</option><option value="5000">5 km</option></select></label>
+    <label class="f c"><input type="checkbox" id="oKi" checked><span>🤖 Logs der ungefundenen Caches auswerten (noch nicht ausgewertete)</span></label>
+    <label class="f c"><input type="checkbox" id="oMu"><span>🧩 Stationen der Multis aus dem Listing lesen</span></label>
+    <div class="tools"><button id="oGo">📦 Vorbereiten</button></div><div id="oOut" class="sub"></div>
+    <h4>Karte</h4>
+    <p class="sub">${cov ? cov.map(x => `Zoom ${x.z}: ${x.h} von ${x.n} Kacheln da`).join(' · ') + ' (1 km Umkreis)' : ''}</p>
+    <p class="sub">Die Kacheln von openstreetmap.org dürfen laut Nutzungsregeln nicht vorab im Paket geladen werden. Offline da ist, was du dir einmal angesehen hast: das Gebiet vorher auf der Karte in den Zoomstufen anschauen. Ein eigener Kachelserver (später SSD-Server) würde das lösen.</p>`, b => {
+    b.querySelector('#oGo').onclick = () => run(async () => {
+      const r = +b.querySelector('#oR').value, out = b.querySelector('#oOut'), log = t => { out.innerHTML += esc(t) + '<br>'; };
+      out.innerHTML = '';
+      const libs = await Promise.allSettled([loadSqlJs(), fetch('https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'), fetch('https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css')]);
+      log(`App-Bausteine: ${libs.filter(x => x.status === 'fulfilled').length}/3 im Speicher`);
+      const list = [...S.caches.values()].filter(c => !c.found && haversine(ref.lat, ref.lon, c.lat, c.lon) <= r);
+      log(`${list.length} ungefundene Caches im Umkreis, davon ${list.filter(c => (c.logs || []).length).length} mit Logs`);
+      if (b.querySelector('#oKi').checked) {
+        const todo = list.filter(c => (c.logs || []).length && (!S.ai.has(c.geocode) || !S.ai.get(c.geocode).suchhilfe));
+        let ok = 0, err = 0;
+        for (const c of todo) { try { await aiAnalyze(c); ok++; } catch (e) { err++; } out.lastChild && (out.innerHTML = out.innerHTML.replace(/🤖[^<]*<br>$/, '')); log(`🤖 ausgewertet ${ok + err}/${todo.length}${err ? ` (${err} Fehler)` : ''}`); }
+        if (!todo.length) log('🤖 alles schon ausgewertet');
+      }
+      if (b.querySelector('#oMu').checked) {
+        const todo = [];
+        for (const c of list) if (['multi', 'wherigo'].includes(c.type) && c.desc && !(await getMulti(c.geocode))) todo.push(c);
+        let ok = 0;
+        for (const c of todo) { try { await aiMulti(c); ok++; } catch (e) { /* weiter */ } }
+        log(`🧩 Stationen gelesen: ${ok}/${todo.length}`);
+      }
+      drawCacheMarkers(); renderStage();
+      log('✅ fertig – Flugmodus-Test lohnt sich');
+    });
+  });
+}
+
+/* ---------- Gefunden & weiter ---------- */
+function nearestUnfound(exclude) {
+  const p = S.pos || S.target; if (!p) return null;
+  let best = null;
+  for (const c of S.caches.values()) {
+    if (c.found || c.disabled || c.archived || c.geocode === exclude) continue;
+    if (c.type === 'mystery' && !c.corrected) continue;          // ungelöste Rätsel: Koordinaten sind nicht das Versteck
+    if (S.set.skipGear && missingGear(c, S.set).length) continue; // Ausrüstung fehlt (z. B. Klettern, Boot)
+    const d = haversine(p.lat, p.lon, c.lat, c.lon);
+    if (!best || d < best.d) best = { c, d };
+  }
+  return best;
+}
+async function foundAndNext(c, text, photoIds) {
+  await idbPut('mylogs', { geocode: c.geocode, name: c.name, type: 'found', text, ts: Date.now(), lat: S.pos && S.pos.lat, lon: S.pos && S.pos.lon, photoIds });
+  c.found = true; await idbPut('caches', c); S.caches.set(c.geocode, c);
+  buzz([60, 60, 200]);
+  const nx = nearestUnfound(c.geocode);
+  if (!nx) { closeSheet(); drawCacheMarkers(); return toast('✅ Gefunden gespeichert – kein weiterer ungefundener Cache geladen'); }
+  targetCache(nx.c.geocode);
+  const ti = (TYPE_INFO[nx.c.type] || TYPE_INFO.other)[0];
+  toast(`✅ Gefunden gespeichert · weiter: ${nx.c.name} (${ti}, ${fmtDist(nx.d)})`, 5000);
+  say(`Weiter zu ${nx.c.name}, ${ti}, ${sayDist(Math.round(nx.d / 10) * 10)}`);
+}
+
 /* ---------- Offline-Log + Fotos ---------- */
 async function showMyLog() {
   const t = S.target, c = curCache();
@@ -1421,12 +1757,16 @@ async function showMyLog() {
     <div class="seg"><label><input type="radio" name="lt" value="found" checked>Gefunden</label><label><input type="radio" name="lt" value="dnf">Nicht gefunden</label><label><input type="radio" name="lt" value="note">Notiz</label><label><input type="radio" name="lt" value="maint">Wartung nötig</label></div>
     <textarea id="lText" rows="4" placeholder="Logtext (kannst du zu Hause noch ausbauen)"></textarea>
     ${thumbs ? `<p class="sub">Fotos anhängen:</p><div class="thumbs">${thumbs}</div>` : '<p class="sub">Noch keine Fotos zu diesem Cache (📸 in der Leiste).</p>'}
-    <div class="tools"><button id="lSave">💾 Log speichern</button></div>` : '<p>Kein Cache als Ziel.</p>'}
+    <div class="tools"><button id="lSave">💾 Log speichern</button><button id="lNext">✅ Gefunden & weiter ➜</button></div>` : '<p>Kein Cache als Ziel.</p>'}
     <h4>Gespeicherte Offline-Logs (${all.length})</h4>
     <div class="tools"><button id="lExport">📤 Feldnotizen exportieren</button></div>
     <ul class="logs">${rows || '<li class="empty">Noch keine.</li>'}</ul>`, b => {
     const cleanup = () => urls.forEach(u => URL.revokeObjectURL(u));
     $('#sheetClose').addEventListener('click', cleanup, { once: true });
+    if (c) b.querySelector('#lNext').onclick = () => run(async () => {
+      const photoIds = [...b.querySelectorAll('.thumbs input:checked')].map(i => +i.value);
+      cleanup(); await foundAndNext(c, b.querySelector('#lText').value.trim(), photoIds);
+    });
     if (c) b.querySelector('#lSave').onclick = () => run(async () => {
       const type = b.querySelector('input[name=lt]:checked').value, text = b.querySelector('#lText').value.trim();
       const photoIds = [...b.querySelectorAll('.thumbs input:checked')].map(i => +i.value);
@@ -1467,6 +1807,15 @@ function showSettings() {
     <label class="f"><span>Karte dunkel</span><select data-k="mapDark"><option value="on">immer</option><option value="auto">nach Sonnenstand</option><option value="off">nie</option></select></label>
     ${chk('autoZoom', 'Karte zoomt automatisch (Ziel bzw. nächste Abbiegung im Bild)')}
     ${chk('keepAwake', 'Bildschirm anlassen')}
+    <h4>Unterwegs</h4>
+    ${chk('speak', 'Ansagen per Sprache (Abstände 2 km … 10 m, Abzweigungen)')}
+    ${chk('vibrate', 'Vibration (Abstände, Abzweigungen, Fadenkreuz grün)')}
+    ${chk('night', 'Nachtmodus (rote Anzeige, Reflektorsuche)')}
+    ${f('stepLen', 'Schrittlänge für Peilungen (m)', 'number', 'min="0.3" max="1.5" step="0.01"')}
+    ${f('declination', 'Missweisung für Kompasswerte (°, Ost +; Standard 4 – für deinen Ort prüfen)', 'number', 'min="-30" max="30" step="0.1"')}
+    <h4>Meine Ausrüstung</h4>
+    ${ATTRS.filter(a => a[3]).map(a => chk('gear_' + a[0], a[1] + ' ' + a[2].replace(/ nötig$/, ''))).join('')}
+    ${chk('skipGear', '„Gefunden & weiter“ überspringt Caches, für die Ausrüstung fehlt')}
     <h4>Routing (Valhalla)</h4>
     ${f('routeUrl', 'Routing-Adresse: ./api/route.php (über deinen Server) oder direkt https://…/ (Valhalla mit HTTPS)')}
     <label class="f"><span>Unterwegs</span><select data-k="routeCosting"><option value="pedestrian">zu Fuß</option><option value="bicycle">Fahrrad</option><option value="motor_scooter">Roller</option><option value="auto">Auto</option></select></label>
@@ -1491,6 +1840,7 @@ function showSettings() {
         saveSettings();
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
         if (k === 'mapDark') applyMapDark();
+        if (k === 'night') applyNight();
         if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };
     });
@@ -1527,6 +1877,7 @@ async function showDiag() {
 /* ---------- Start ---------- */
 async function start() {
   if (S.started) return; S.started = true;
+  try { if ('speechSynthesis' in window) speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(' '), { volume: 0 })); } catch (e) { /* egal */ }
   $('#start').hidden = true;
   startGps();
   await startOrientation();
@@ -1536,10 +1887,11 @@ async function start() {
 async function init() {
   document.body.dataset.mode = 'cam';
   await loadAll().catch(e => console.error(e));
-  renderTop(); updateButtons(); renderStage(); applyMapDark(); setInterval(applyMapDark, 60000);
+  renderTop(); updateButtons(); renderStage(); applyMapDark(); setInterval(applyMapDark, 60000); applyNight();
   $('#bStart').onclick = () => run(start);
   $('#bList').onclick = () => showList();
   $('#bRoute').onclick = toggleRouting;
+  $('#bNight').onclick = toggleNight;
   $('#top').onclick = e => { if (!e.target.closest('button')) showInfo(); };
   $('#bHint').onclick = showInfo;
   $('#bLogs').onclick = showLogs;
@@ -1563,5 +1915,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, htmlText, sunElevation, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, findBrightSpots, colorName, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

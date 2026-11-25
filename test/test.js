@@ -102,6 +102,36 @@ t('Sonnenhöhe Augsburg', () => {
   assert.ok(A.sunElevation(48.37, 10.89, new Date(Date.UTC(2026, 10, 25, 20, 0))) < -30);   // Novemberabend
 });
 
+t('Reflektoren finden, große Lichtflächen ignorieren', () => {
+  const w = 120, h = 90, px = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) { px[4 * i] = 20 + (i % 7); px[4 * i + 1] = 22; px[4 * i + 2] = 25; px[4 * i + 3] = 255; }
+  const put = (x0, y0, s, r, g, b) => { for (let y = y0; y < y0 + s; y++) for (let x = x0; x < x0 + s; x++) { const i = y * w + x; px[4 * i] = r; px[4 * i + 1] = g; px[4 * i + 2] = b; } };
+  put(30, 20, 3, 255, 255, 250);      // weißer Reflektor
+  put(80, 60, 2, 255, 230, 220);      // rötlich-heller Reflektor
+  put(5, 50, 25, 255, 255, 255);      // Laterne / helle Fläche (zu groß)
+  const sp = A.findBrightSpots(px, w, h);
+  assert.strictEqual(sp.length, 2);
+  near(sp.find(p => p.x < 50).x, 31, 0.01); near(sp.find(p => p.x < 50).y, 21, 0.01);
+  assert.strictEqual(A.colorName([255, 255, 250]), 'weiß'); assert.strictEqual(A.colorName([230, 40, 30]), 'rot'); assert.strictEqual(A.colorName([40, 220, 60]), 'grün');
+});
+t('Ansage-Stufen', () => {
+  assert.strictEqual(A.annStepBelow(730), 500); assert.strictEqual(A.annStepBelow(100), 50); assert.strictEqual(A.annStepBelow(9), null); assert.strictEqual(A.annStepBelow(5000), 2000);
+});
+
+t('Attribute zuordnen', () => {
+  const f = A.mapAttr('flashlight_yes'); assert.strictEqual(f.key, 'flashlight'); assert.ok(f.tool && f.yes);
+  assert.strictEqual(A.mapAttr('treeclimbing_yes').key, 'tree_climbing');
+  assert.strictEqual(A.mapAttr('rappelling_yes').key, 'climbing_gear');
+  assert.strictEqual(A.mapAttr('climbing_yes').key, 'climbing');
+  assert.strictEqual(A.mapAttr('nightcache_yes').key, 'night'); assert.strictEqual(A.mapAttr('night_yes').key, 'night_rec');
+  const d = A.mapAttr('dogs_no'); assert.strictEqual(d.key, 'dogs'); assert.ok(!d.yes); assert.ok(d.label.startsWith('nicht'));
+  assert.strictEqual(A.mapAttr('', 51, 1).key, 'special_tool'); assert.ok(!A.mapAttr('', 51, 0).tool);
+  assert.strictEqual(A.mapAttr('UV-Lampe erforderlich').key, 'uv'); assert.strictEqual(A.mapAttr('Hunde nicht erlaubt').yes, false);
+  const c = { attrs: [A.mapAttr('flashlight_yes'), A.mapAttr('boat_yes'), A.mapAttr('parking_yes')] };
+  assert.deepStrictEqual(A.toolAttrs(c).map(a => a.key), ['flashlight', 'boat']);
+  assert.deepStrictEqual(A.missingGear(c, { gear_flashlight: true, gear_boat: false }).map(a => a.key), ['boat']);
+});
+
 // Multi: Formeln und Koordinaten
 t('Ausdrücke rechnen', () => {
   assert.strictEqual(A.evalExpr('A*2+B', { A: 3, B: '4' }).value, 10);
@@ -139,6 +169,8 @@ if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
   db.exec(`CREATE TABLE cg_caches(_id INTEGER PRIMARY KEY, updated LONG, detailed INTEGER, geocode TEXT UNIQUE, name TEXT, type TEXT, latitude DOUBLE, longitude DOUBLE,
       difficulty FLOAT, terrain FLOAT, size TEXT, hint TEXT, owner TEXT, found INTEGER, disabled INTEGER, archived INTEGER, personal_note TEXT, coordsChanged INTEGER, shortdesc TEXT, description TEXT);
     CREATE TABLE cg_logs(_id INTEGER PRIMARY KEY, geocode TEXT, updated LONG, service_log_id TEXT, type INTEGER, author TEXT, log TEXT, date LONG, found INTEGER, friend INTEGER);
+    CREATE TABLE cg_attributes(_id INTEGER PRIMARY KEY, geocode TEXT, updated LONG, attribute TEXT);
+    INSERT INTO cg_attributes(geocode, attribute) VALUES('GC7FAX4','flashlight_yes'),('GC7FAX4','s-tool_yes'),('GC7FAX4','dogs_yes');
     CREATE TABLE cg_waypoints(_id INTEGER PRIMARY KEY, geocode TEXT, updated LONG, type TEXT, prefix TEXT, lookup TEXT, name TEXT, latitude DOUBLE, longitude DOUBLE, note TEXT, own INTEGER);
     INSERT INTO cg_caches(geocode,name,type,latitude,longitude,difficulty,terrain,size,hint,owner,found,disabled,archived,personal_note,coordsChanged)
       VALUES('GC7FAX4','Testmulti','multi',48.3655,10.8712,2.5,1.5,'SMALL','Unter der Bank','Owner',0,0,0,'Notiz',1),
@@ -154,6 +186,7 @@ if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
   assert.strictEqual(c.logs.length, 3); assert.strictEqual(c.logs[0].author, 'B'); assert.strictEqual(A.dnfStreak(c.logs), 1);
   assert.strictEqual(c.wpts.length, 2); assert.strictEqual(c.wpts[0].prefix, 'S1'); assert.strictEqual(c.wpts[1].lat, null); // Final ohne Koordinaten bleibt
   near(c.orig.lat, 48.3650, 1e-9); assert.ok(c.desc.includes('Zähle die Latten'));
+  assert.deepStrictEqual(A.toolAttrs(c).map(a => a.key), ['flashlight', 'special_tool']); assert.strictEqual(c.attrs.length, 3);
 });
 else console.log('– node:sqlite fehlt, c:geo-Test übersprungen');
 

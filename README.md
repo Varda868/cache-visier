@@ -92,6 +92,37 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
 - **Bildfähiger Anbieter nötig:** Gemini oder Claude; in `$PROVIDERS` mit `'vision' => true` markierbar. Fotos gehen verkleinert (2048 px) an die KI.
 - **Grenzen:** Die KI liest Listings und zählt auf Fotos nicht fehlerfrei. Formel und Zählung bitte gegenprüfen, das Final mit Logs oder Checker.
 
+## Unterwegs
+
+- **🌙 Nachtmodus** (oben):
+  - Die ganze Anzeige wird rot und gedimmt, damit die Augen an die Dunkelheit gewöhnt bleiben.
+  - Im Kamerabild sucht die App kleine, sehr helle Flecken vor dunklem Grund (Reflektoren/Firetacks), markiert sie mit Ringen und nennt die Farbe. Das läuft auf dem Handy, ohne KI und ohne Netz. Am besten mit 🔦 Lampe an.
+  - Große helle Flächen wie Laternen werden ignoriert.
+- **Ansagen und Vibration:**
+  - Abstände zum Ziel bei 2 km, 1 km, 500, 200, 100, 50, 20 und 10 m, mit Route über den Restweg gerechnet.
+  - Abzweigungen etwa 120 m vorher und „Jetzt“ bei 20 m, bei Tempo über 6 m/s bei 300 und 40 m.
+  - Vibration: links zweimal kurz, rechts einmal lang. Kurzer Tick, wenn das Fadenkreuz grün wird.
+  - Beides in ⚙️ abschaltbar.
+- **📐 Peilung** (☰ und 💡):
+  - Entfernung in Metern, Schritten (Schrittlänge einstellbar), km oder Fuß, dazu die Richtung in Grad.
+  - Startpunkt: dein Standort, das aktuelle Ziel oder eingegebene Koordinaten.
+  - „Kompasswert (missweisend)“ rechnet die Missweisung aus den Einstellungen dazu (Standard 4°, für deinen Ort prüfen).
+  - **Mit der Kamera peilen:** Fadenkreuz auf das Ziel, die Richtung kommt vom Kompass. Die Entfernung schätzt die App aus der Neigung, wenn du auf den Fuß des Ziels zielst (Handyhöhe einstellbar, ungenau über 50 m).
+  - Ergebnis als Ziel, zum Kopieren oder als Wegpunkt beim Cache.
+- **✅ Gefunden & weiter** (✍️ Log):
+  - Speichert den Fund-Log und springt zum nächsten ungefundenen Cache, mit Route, wenn sie an ist.
+  - Übersprungen werden ungelöste Mysterys (ohne korrigierte Koordinaten) und Caches, für die dir laut Einstellungen Ausrüstung fehlt.
+- **Attribute und Ausrüstung:**
+  - Attribute kommen aus c:geo (`cg_attributes`), GPX und Opencaching.
+  - Werkzeug-Attribute (🔦 Taschenlampe, 🟣 UV, 🔧 Spezialwerkzeug, 🧗 Klettern, 🚣 Boot, 🤿 Tauchen, 🥾 Waten …) stehen in Kopfzeile, Liste und Infoblatt; ❗ heißt, dir fehlt etwas.
+  - Unter ⚙️ → „Meine Ausrüstung“ einstellen.
+  - Die KI bekommt die Attribute mit und soll sie mit den Logs konkretisieren, z. B. welches Spezialwerkzeug genau.
+- **📦 Offline** (☰):
+  - Lädt die App-Bausteine (Karte, SQLite) in den Speicher, wertet die Logs der ungefundenen Caches im Umkreis aus und liest auf Wunsch die Multi-Stationen.
+  - Zeigt, wie viel der Karte im Umkreis schon gespeichert ist.
+  - Kartenkacheln von openstreetmap.org dürfen laut Nutzungsregeln nicht vorab in Masse geladen werden. Offline da ist, was du dir angesehen hast. Ein eigener Kachelserver würde das lösen.
+  - 📴 in der Statuszeile zeigt, dass das Handy offline ist.
+
 ## Routing (Valhalla)
 
 - **🧭 oben rechts** schaltet das Routing an und aus.
@@ -113,6 +144,7 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
 
 | Knopf | Funktion |
 |---|---|
+| 🌙 (oben) | Nachtmodus: rot, Reflektorsuche |
 | 🧭 (oben) | Routing an/aus |
 | 🔄 | Auto (senkrecht = Kamera, flach = Karte) → Kamera fest → Karte fest |
 | 🔦 | Lampe an/aus. Geht nur, wenn Handy und Browser das Licht über die Kamera schalten lassen (Diagnose zeigt es). |
