@@ -78,7 +78,10 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
   - Auf den letzten 30–40 m schaltet die App auf Luftlinie zum Ziel um. Die Route endet am nächsten Weg, der Cache liegt oft daneben.
   - Liegst du zweimal hintereinander mehr als 30 m neben der Route, berechnet die App sie neu (höchstens alle 20 s).
 - **Adresse** (⚙️ → Routing):
-  - `./api/route.php` (Standard): Dein Server leitet an Valhalla weiter. In `config.php` dazu `const VALHALLA_URL = 'http://…:8002';` setzen, so wie der Server Valhalla erreicht. Das Skript prüft das Token und leitet nur `/route` mit geprüften Werten weiter.
+  - `./api/route.php` (Standard): Dein Server leitet weiter, ohne Einstellung an das öffentliche FOSSGIS-Valhalla (`https://valhalla1.openstreetmap.de`). Das Skript prüft das Token, leitet nur `/route` mit geprüften Werten weiter und schickt einen eigenen User-Agent.
+    - **Drossel für FOSSGIS** (kein Dauerbetrieb): höchstens 12 Routen pro Minute und 400 pro Tag (`ROUTE_PER_MINUTE`, `ROUTE_PER_DAY`).
+    - Die App wartet beim Zielwechsel 1,5 s, damit schnelles Durchklicken nur eine Anfrage auslöst. Abseits der Route rechnet sie höchstens alle 20 s neu.
+    - **Eigener Valhalla-Server später:** `const VALHALLA_URL = 'http://…:8002';` in `config.php`.
   - Oder direkt die Valhalla-Adresse (`https://…/`). Das geht nur, wenn Valhalla über HTTPS erreichbar ist. Die App fragt dann per GET `…/route?json=…`, ohne Preflight.
 - **Fortbewegung:** zu Fuß, Fahrrad, Roller oder Auto. Die Anweisungen kommen auf Deutsch von Valhalla.
 

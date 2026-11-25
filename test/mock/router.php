@@ -1,6 +1,7 @@
 <?php
 $in = json_decode(file_get_contents('php://input'), true);
 file_put_contents(__DIR__ . '/last.json', json_encode($in, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+file_put_contents(__DIR__ . '/last-ua.txt', $_SERVER['HTTP_USER_AGENT'] ?? '');
 header('Content-Type: application/json');
 $res = ['kurzfassung' => 'Magnetisch am Geländer der Brücke.', 'zustand' => 'gut', 'letzter_fund' => '2026-11-20', 'dnf_serie' => 0,
   'versteck_hinweise' => [['hinweis' => 'Magnet', 'zitat' => 'magnetisch', 'log_nr' => 2]],

@@ -4,9 +4,11 @@
 // Langes Zufallswort; dasselbe trägst du in der App unter Einstellungen → Token ein.
 const APP_TOKEN = 'HIER-EIN-LANGES-ZUFALLSWORT';
 
-// Routing: Adresse deines Valhalla-Servers (ohne /route), so wie dieser Server ihn erreicht.
-// Leer lassen, wenn die App Valhalla direkt über HTTPS anspricht.
-const VALHALLA_URL = '';
+// Routing: Valhalla-Adresse (ohne /route). Standard ist das öffentliche FOSSGIS-Valhalla – sparsam nutzen, kein Dauerbetrieb.
+// Später eigener Server: z. B. 'http://127.0.0.1:8002'. Drossel: höchstens so viele Routen pro Minute / Tag.
+const VALHALLA_URL = 'https://valhalla1.openstreetmap.de';
+const ROUTE_PER_MINUTE = 12;
+const ROUTE_PER_DAY = 400;
 
 // Höchstens so viele Auswertungen pro Tag (Bremse für Gratis-Kontingente)
 const DAILY_LIMIT = 300;

@@ -17,7 +17,7 @@ async def main():
         await pg.evaluate("""() => { CV.set.apiToken = 'tok123'; CV.caches.set('GC7FAX4', {geocode:'GC7FAX4', name:'Testmulti', type:'multi', lat:48.3712, lon:10.8712, d:2, t:1.5, size:'Small', hint:'', logs:[], wpts:[], src:'gpx'}); }""")
         await pg.click('#bRoute'); await pg.wait_for_timeout(300)
         print('Toast ohne Ziel:', await pg.text_content('#toast'))
-        await pg.click('#bList'); await pg.click('li.row'); await pg.wait_for_timeout(800)
+        await pg.click('#bList'); await pg.click('li.row'); await pg.wait_for_timeout(2200)
         print('Anfragen:', await pg.evaluate('_rc'), '| Token mitgeschickt:', await pg.evaluate('_tok'), '| Art:', await pg.evaluate('_last.costing'))
         for _ in range(25):
             await pg.evaluate("window.dispatchEvent(Object.assign(new Event('deviceorientationabsolute'), {alpha:270, beta:90, gamma:0, absolute:true}))"); await pg.wait_for_timeout(20)

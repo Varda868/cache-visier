@@ -558,8 +558,11 @@ function setTarget(t) {
   S.target = t; idbPut('meta', t, 'target').catch(() => {});
   S.route = null; S.steer = null;
   renderTop(); drawCacheMarkers(); closeSheet();
-  if (S.set.routing) requestRoute('user');
+  if (S.set.routing) routeSoon();
 }
+/* schnelles Durchklicken von Zielen löst nur eine Anfrage aus (Rücksicht auf den öffentlichen Valhalla-Server) */
+let _routeTimer;
+function routeSoon() { clearTimeout(_routeTimer); _routeTimer = setTimeout(() => requestRoute('user'), 1500); }
 
 /* ---------- Routing (Valhalla) ---------- */
 function targetKey(t) { return t ? t.lat.toFixed(6) + ',' + t.lon.toFixed(6) : ''; }
@@ -617,7 +620,7 @@ function routeText(R, dist, brg) {
 }
 function toggleRouting() {
   S.set.routing = !S.set.routing; saveSettings(); updateButtons();
-  if (S.set.routing) { if (!S.target) toast('🧭 Routing an – erst ein Ziel wählen'); else requestRoute('user'); }
+  if (S.set.routing) { if (!S.target) toast('🧭 Routing an – erst ein Ziel wählen'); else routeSoon(); }
   else { S.route = null; S.steer = null; drawRoute(); toast('Routing aus – Luftlinie'); }
 }
 function drawRoute() {
