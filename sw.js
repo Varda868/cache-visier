@@ -1,5 +1,5 @@
 /* CacheVisier Service Worker: offline-fähige App-Hülle, CDN- und Kartenkacheln im Cache, Datei-Empfang über „Teilen“ */
-const V = 'cv-shell-v1';
+const V = 'cv-shell-v2';
 const SHELL = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const CDN = 'cv-cdn-v1', TILES = 'cv-tiles-v1', INBOX = 'cv-inbox', MAX_TILES = 3000;
 

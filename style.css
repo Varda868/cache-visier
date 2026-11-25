@@ -126,7 +126,7 @@ textarea { resize: vertical; }
 
 #flash { position: fixed; inset: 0; z-index: 950; background: #fff; opacity: 0; pointer-events: none; transition: opacity .12s; }
 #flash.on { opacity: .7; }
-#toast { position: fixed; left: 50%; top: calc(var(--st) + 70px); z-index: 960; transform: translate(-50%, -20px); opacity: 0;
+#toast { position: fixed; left: 50%; top: 38%; z-index: 960; transform: translate(-50%, -20px); opacity: 0;
   max-width: 90vw; padding: 9px 14px; border-radius: 12px; background: rgba(0,0,0,.85); border: 1px solid var(--line);
   transition: all .2s; pointer-events: none; text-align: center; }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -141,3 +141,30 @@ textarea { resize: vertical; }
 .pbtn { margin-top: 6px; color: #000; background: var(--acc); border: 0; }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #121820; color: var(--fg); }
 .leaflet-control-attribution { margin-bottom: calc(var(--sb) + 150px) !important; }
+
+/* Multi: Kärtchen nächste Station */
+#stage { position: fixed; left: 8px; right: 8px; top: calc(var(--st) + 62px); z-index: 520; max-height: 34vh; overflow: auto;
+  padding: 8px 10px; border-radius: 12px; background: rgba(11, 15, 20, .86); border: 1px solid var(--line); }
+#stage .st-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; cursor: pointer; }
+#stage .st-h span { color: var(--acc); font-weight: 700; white-space: nowrap; }
+#stage .st-t { margin-top: 4px; white-space: pre-wrap; font-size: 14px; }
+#stage .st-v { margin-top: 4px; color: #8fc1ff; font-size: 14px; }
+#stage .tools { margin: 6px 0 0; }
+#stage.min .st-t, #stage.min .st-v, #stage.min .tools { display: none; }
+.stn { padding: 10px 4px; border-bottom: 1px solid var(--line); }
+.stn.cur { background: rgba(61, 139, 255, .08); border-left: 3px solid #3d8bff; padding-left: 8px; }
+.stn.done { opacity: .7; }
+.stn .aufg { white-space: pre-wrap; margin: 6px 0; }
+.stn.final { border: 1px solid var(--acc); border-radius: 10px; padding: 10px; margin-top: 10px; }
+.coord.big { font-size: 20px; font-weight: 700; margin: 6px 0; }
+.var { display: grid; grid-template-columns: 30px 84px 40px 1fr; gap: 6px; align-items: center; margin: 6px 0; }
+.var button { padding: 5px 0; }
+.var b { font-size: 18px; color: var(--acc); }
+.var input { padding: 6px 8px; font-size: 18px; text-align: center; }
+.var small { color: var(--mut); }
+.foto { margin: 6px 0; padding: 8px; border-radius: 8px; background: #0b0f14; border-left: 3px solid var(--ok); }
+.fw { margin-top: 4px; }
+.fw button { padding: 3px 8px; font-size: 13px; margin-left: 4px; }
+.answer { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+.answer img { width: 110px; height: 110px; object-fit: cover; border-radius: 10px; }
+.answer .big { font-size: 44px; font-weight: 800; color: var(--acc); line-height: 1; }

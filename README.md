@@ -25,7 +25,7 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
    - `api/config.sample.php` als `config.php` hineinlegen und ausfüllen: `APP_TOKEN` auf ein langes Zufallswort setzen, Anbieter in `$PROVIDERS` einrichten (siehe unten).
    - Dort liegen auch die Tageszähler. Das Git-Deployment überschreibt den Ordner nie, und im Web ist er nicht erreichbar.
    - Ohne diesen Ordner sucht `ki.php` die Datei als `api/config.php`. Die `.htaccess` sperrt sie dann.
-   - Voraussetzung: PHP 7.4 oder neuer mit curl und mbstring.
+   - Voraussetzung: PHP 8.0 oder neuer mit curl und mbstring.
 3. **Auf dem Handy:**
    - Adresse in Chrome öffnen, dann Menü → „Zum Startbildschirm hinzufügen“.
    - Starten und Kamera, Standort und Bewegungssensoren erlauben.
@@ -67,6 +67,30 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
 - **Ablauf:** Die App schickt Hint und bis zu 40 Logs (je 900 Zeichen) an `ki.php`. Zurück kommen eine Kurzfassung, der Zustand, die DNF-Serie, Versteckhinweise mit Zitat und Lagehinweise („8 m neben der Bushaltestelle“).
 - **Suchzonen:** Die App sucht den Bezugspunkt in OpenStreetMap im Umkreis von 170 m um die Listing-Koordinaten und zeichnet daraus eine Suchzone. Jede Zone lässt sich als Ziel setzen.
 - Das sind Vorschläge, keine Koordinaten. Das Zitat zeigt, worauf sie beruhen.
+
+## Multi-Stationen und Foto → KI
+
+- **🧩 Stationen** (im 💡- und im 🤖-Blatt oder im Kärtchen oben): Die KI liest aus Listing-Beschreibung und Wegpunkten:
+  - die Stationen mit Aufgabe und den Variablen samt genauer Frage,
+  - den Ort jeder Station (Listing, feste Koordinaten, Formel oder Peilung),
+  - die Final-Formel.
+  - Die Beschreibung kommt aus dem c:geo-Backup (Cache mit Details gespeichert), aus GPX oder aus Opencaching.
+- **Kärtchen oben:**
+  - Es zeigt immer die **nächste offene Station**: Aufgabe, gesuchte Variablen, Entfernung.
+  - 🎯 setzt die Station als Ziel, sobald ihre Koordinaten berechenbar sind.
+  - Antippen der Kopfzeile klappt das Kärtchen ein.
+- **📸 Foto → KI:** öffnet die **Kamera-App des Handys** (volle Auflösung, Zoom). 🖼 nimmt ein Foto aus der Galerie.
+  - Die KI liest die gesuchten Werte ab, bei Zählaufgaben mit Zählweise („links 12, rechts 11“).
+  - Du übernimmst einen Wert mit „Übernehmen“. Nichts wird ungefragt eingetragen.
+  - Das Foto wird auch für den Log gespeichert.
+- **❓ Foto-Frage:** freie Frage zu einem Foto, z. B. „Wie viele Latten hat der Zaun?“. Das Ergebnis lässt sich direkt als Variable übernehmen.
+  - 📸 neben jeder Variable stellt nur deren Frage.
+- **Final:**
+  - Wird aus den Werten berechnet, Peilungen (z. B. `A*10` m in `90`°) inklusive.
+  - Liegt es mehr als 2 Meilen vom Start, warnt die App.
+  - Formeln: `+ - * / % ^ ( )`, `QS()` (Quersumme), `IQS()` (einstellige Quersumme).
+- **Bildfähiger Anbieter nötig:** Gemini oder Claude; in `$PROVIDERS` mit `'vision' => true` markierbar. Fotos gehen verkleinert (2048 px) an die KI.
+- **Grenzen:** Die KI liest Listings und zählt auf Fotos nicht fehlerfrei. Formel und Zählung bitte gegenprüfen, das Final mit Logs oder Checker.
 
 ## Routing (Valhalla)
 

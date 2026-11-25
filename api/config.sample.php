@@ -27,16 +27,17 @@ $k = fn(string $name) => $ENV[$name] ?? (getenv($name) ?: '');
 /* Reihenfolge = Priorität. Fällt einer aus (Limit 429, Fehler, kein gültiges JSON), kommt der nächste dran.
    on => false schaltet einen Eintrag ab. needs_key => true überspringt ihn, solange kein Schlüssel da ist.
    json => true schickt response_format json_object (Groq und Gemini können das).
+   vision => true: Modell versteht Fotos (für „Foto an der Station auswerten“). Ohne Angabe gelten Gemini und Claude als bildfähig.
    Modellnamen ändern sich: bei Fehlern „model not found“ in der Konsole des Anbieters nachsehen. */
 $PROVIDERS = [
   ['name' => 'Groq', 'on' => true, 'type' => 'openai', 'needs_key' => true,
-   'base' => 'https://api.groq.com/openai/v1', 'key' => $k('GROQ_API_KEY'), 'model' => 'openai/gpt-oss-120b', 'json' => true, 'timeout' => 40],
+   'base' => 'https://api.groq.com/openai/v1', 'key' => $k('GROQ_API_KEY'), 'model' => 'openai/gpt-oss-120b', 'json' => true, 'timeout' => 40, 'vision' => false],
 
   ['name' => 'Gemini', 'on' => true, 'type' => 'openai', 'needs_key' => true,
-   'base' => 'https://generativelanguage.googleapis.com/v1beta/openai', 'key' => $k('GEMINI_API_KEY'), 'model' => 'gemini-3.7-flash', 'json' => true, 'timeout' => 60],
+   'base' => 'https://generativelanguage.googleapis.com/v1beta/openai', 'key' => $k('GEMINI_API_KEY'), 'model' => 'gemini-3.7-flash', 'json' => true, 'timeout' => 60, 'vision' => true],
 
   ['name' => 'OpenRouter', 'on' => true, 'type' => 'openai', 'needs_key' => true,
-   'base' => 'https://openrouter.ai/api/v1', 'key' => $k('OPENROUTER_API_KEY'), 'model' => 'NAME:free', 'json' => false, 'timeout' => 90],
+   'base' => 'https://openrouter.ai/api/v1', 'key' => $k('OPENROUTER_API_KEY'), 'model' => 'NAME:free', 'json' => false, 'timeout' => 90, 'vision' => false],
 
   ['name' => 'Z.ai', 'on' => false, 'type' => 'openai', 'needs_key' => true,
    'base' => 'https://api.z.ai/api/paas/v4', 'key' => $k('ZAI_API_KEY'), 'model' => 'MODELLNAME', 'json' => false, 'timeout' => 90],

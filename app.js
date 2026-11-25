@@ -190,7 +190,7 @@ function importCgeo(exec, maxLogs) {
   const tc = tables.includes('cg_caches') ? 'cg_caches' : tables.find(t => { const c = cols(t); return c.includes('geocode') && c.includes('latitude'); });
   if (!tc) throw new Error('Keine Cache-Tabelle gefunden (Tabellen: ' + tables.join(', ') + ')');
   const cc = cols(tc);
-  const want = ['geocode', 'name', 'type', 'latitude', 'longitude', 'difficulty', 'terrain', 'size', 'hint', 'owner', 'found', 'disabled', 'archived', 'personal_note', 'coordsChanged'];
+  const want = ['geocode', 'name', 'type', 'latitude', 'longitude', 'difficulty', 'terrain', 'size', 'hint', 'owner', 'found', 'disabled', 'archived', 'personal_note', 'coordsChanged', 'shortdesc', 'description'];
   const sel = want.filter(c => cc.includes(c));
   const res = q(`SELECT ${sel.map(c => '"' + c + '"').join(',')} FROM "${tc}"`);
   const caches = new Map();
@@ -201,7 +201,7 @@ function importCgeo(exec, maxLogs) {
       geocode: o.geocode, name: o.name || o.geocode, type: normType(o.type), lat: +o.latitude, lon: +o.longitude,
       d: num(o.difficulty), t: num(o.terrain), size: normSize(o.size), hint: o.hint || '', owner: o.owner || '',
       found: !!o.found, disabled: !!o.disabled, archived: !!o.archived, note: o.personal_note || '', corrected: !!o.coordsChanged,
-      logs: [], wpts: [], src: 'cgeo'
+      desc: [o.shortdesc, o.description].filter(Boolean).join('\n\n'), logs: [], wpts: [], src: 'cgeo'
     });
   }
   if (tables.includes('cg_logs')) {
@@ -223,8 +223,10 @@ function importCgeo(exec, maxLogs) {
       const r = q(`SELECT ${wsel.map(c => '"' + c + '"').join(',')} FROM cg_waypoints`);
       for (const row of r.values) {
         const o = {}; r.columns.forEach((c, i) => { o[c] = row[i]; });
-        const c = caches.get(o.geocode); if (!c || o.latitude == null || o.longitude == null) continue;
-        c.wpts.push({ name: o.name || o.prefix || 'Wegpunkt', prefix: o.prefix || '', lat: +o.latitude, lon: +o.longitude, type: String(o.type || ''), note: o.note || '' });
+        const c = caches.get(o.geocode); if (!c) continue;
+        const has = o.latitude != null && o.longitude != null;
+        if (String(o.type) === 'original' && has) { c.orig = { lat: +o.latitude, lon: +o.longitude }; continue; } // ursprüngliche Listing-Koordinaten
+        c.wpts.push({ name: o.name || o.prefix || 'Wegpunkt', prefix: o.prefix || '', lat: has ? +o.latitude : null, lon: has ? +o.longitude : null, type: String(o.type || ''), note: o.note || '' });
       }
     }
   }
@@ -249,6 +251,89 @@ function nearestOsm(els, key, value, lat, lon) {
   }
   return best;
 }
+
+/* --- Multi: Ausdrücke rechnen, Koordinaten-Vorlagen füllen, Stationen auflösen --- */
+function quersumme(n) { return String(Math.abs(Math.trunc(n))).split('').reduce((a, d) => a + +d, 0); }
+function evalExpr(src, vars) {
+  const s = String(src == null ? '' : src).replace(/×/g, '*').replace(/÷/g, '/').replace(/(\d),(\d)/g, '$1.$2');
+  let i = 0; const missing = new Set();
+  const peek = () => { while (s[i] === ' ') i++; return s[i]; };
+  const FN = { QS: quersumme, IQS: n => { n = Math.abs(Math.trunc(n)); while (n > 9) n = quersumme(n); return n; },
+    ABS: Math.abs, RUND: Math.round, ROUND: Math.round, INT: Math.trunc, FLOOR: Math.floor };
+  function primary() {
+    const c = peek();
+    if (c === '(') { i++; const v = sum(); if (peek() !== ')') throw new Error('Klammer fehlt'); i++; return v; }
+    if (c === '-') { i++; return -primary(); }
+    if (c === '+') { i++; return primary(); }
+    if (c != null && /[0-9.]/.test(c)) { const j = i; while (/[0-9.]/.test(s[i] || '')) i++; return parseFloat(s.slice(j, i)); }
+    if (c != null && /[A-Za-z_]/.test(c)) {
+      const j = i; while (/[A-Za-z0-9_]/.test(s[i] || '')) i++;
+      const name = s.slice(j, i);
+      if (peek() === '(') {
+        const f = FN[name.toUpperCase()]; if (!f) throw new Error('Unbekannte Funktion ' + name);
+        i++; const v = sum(); if (peek() !== ')') throw new Error('Klammer fehlt'); i++; return isNaN(v) ? NaN : f(v);
+      }
+      const k = Object.keys(vars || {}).find(x => x.toUpperCase() === name.toUpperCase());
+      const raw = k != null ? String(vars[k]).trim().replace(',', '.') : '';
+      const v = raw === '' ? NaN : Number(raw);
+      if (isNaN(v)) { missing.add(name.toUpperCase()); return NaN; }
+      return v;
+    }
+    throw new Error(c == null ? 'Ausdruck endet zu früh' : 'Unerwartetes Zeichen ' + c);
+  }
+  function pow() { const v = primary(); if (peek() === '^') { i++; return Math.pow(v, pow()); } return v; }
+  function prod() { let v = pow(); for (;;) { const c = peek(); if (c === '*') { i++; v *= pow(); } else if (c === '/') { i++; v /= pow(); } else if (c === '%') { i++; v %= pow(); } else return v; } }
+  function sum() { let v = prod(); for (;;) { const c = peek(); if (c === '+') { i++; v += prod(); } else if (c === '-') { i++; v -= prod(); } else return v; } }
+  if (peek() == null) return { value: null, missing: [] };
+  const v = sum(); if (peek() != null) throw new Error('Unerwartet: ' + s.slice(i));
+  return { value: missing.size ? null : v, missing: [...missing] };
+}
+function fillTemplate(tpl, vars) {
+  const missing = new Set(); let err = null;
+  const text = String(tpl || '').replace(/\{([^{}]*)\}/g, (_, ex) => {
+    try {
+      const r = evalExpr(ex, vars);
+      if (r.value == null) { r.missing.forEach(m => missing.add(m)); return '?'; }
+      return Number.isInteger(r.value) ? String(r.value) : String(Math.round(r.value * 1000) / 1000);
+    } catch (e) { err = e.message; return '⚠'; }
+  });
+  return { text, missing: [...missing], err, ok: !missing.size && !err };
+}
+function parseCoord(t) {
+  t = String(t || '').replace(/(\d),(\d)/g, '$1.$2').replace(/[′'’]/g, ' ');
+  let m = /([NS])\s*(\d{1,2})\s*°?\s+(\d{1,2}(?:\.\d+)?)\s*[,;]?\s*([EOW])\s*(\d{1,3})\s*°?\s+(\d{1,2}(?:\.\d+)?)/i.exec(t)
+    || /([NS])\s*(\d{1,2})°\s*(\d{1,2}(?:\.\d+)?)\s*[,;]?\s*([EOW])\s*(\d{1,3})°\s*(\d{1,2}(?:\.\d+)?)/i.exec(t);
+  if (m) {
+    if (+m[3] >= 60 || +m[6] >= 60) return null;
+    return { lat: (+m[2] + +m[3] / 60) * (/s/i.test(m[1]) ? -1 : 1), lon: (+m[5] + +m[6] / 60) * (/w/i.test(m[4]) ? -1 : 1) };
+  }
+  m = /(-?\d{1,2}\.\d{3,})\s*[ ,;]\s*(-?\d{1,3}\.\d{3,})/.exec(t);
+  return m ? { lat: +m[1], lon: +m[2] } : null;
+}
+/* Ort einer Station/des Finals: base = Listing-Koordinaten, pts = schon aufgelöste Stationen nach Nummer */
+function resolvePoint(p, vars, base, pts) {
+  try {
+    if (!p || p.art === 'unbekannt') return { missing: [], text: '' };
+    if (p.art === 'listing') return base ? { lat: base.lat, lon: base.lon, text: fmtCoord(base.lat, base.lon) } : { missing: [], text: '' };
+    if (p.art === 'koordinaten' || p.art === 'formel') {
+      const f = fillTemplate(p.vorlage, vars);
+      if (!f.ok) return { text: f.text, missing: f.missing, err: f.err };
+      const c = parseCoord(f.text);
+      return c ? { lat: c.lat, lon: c.lon, text: f.text } : { text: f.text, missing: [], err: 'Koordinate nicht lesbar' };
+    }
+    if (p.art === 'projektion') {
+      const from = !p.von || /listing/i.test(p.von) ? base : pts[String(p.von).replace(/\D/g, '')];
+      const d = evalExpr(p.distanz, vars), w = evalExpr(p.winkel, vars), miss = d.missing.concat(w.missing);
+      const what = `Peilung ${p.distanz || '?'} m / ${p.winkel || '?'}°`;
+      if (miss.length || d.value == null || w.value == null) return { missing: miss, text: what };
+      if (!from || from.lat == null) return { missing: [], text: what, err: 'Startpunkt der Peilung fehlt' };
+      const q = destPoint(from.lat, from.lon, d.value, w.value);
+      return { lat: q.lat, lon: q.lon, text: `${fmtCoord(q.lat, q.lon)} (${Math.round(d.value)} m / ${Math.round(w.value)}°)` };
+    }
+  } catch (e) { return { missing: [], text: p.vorlage || '', err: e.message }; }
+  return { missing: [], text: '' };
+}
+function stationVarsDone(st, vars) { return (st.variablen || []).every(v => vars[v.name] != null && String(vars[v.name]).trim() !== ''); }
 
 /* --- Route (Valhalla): Polyline6 dekodieren, Position auf der Route finden --- */
 function decodePolyline(str, prec = 6) {
@@ -303,7 +388,7 @@ const DEFAULTS = {
   routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
-  set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
+  set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false, pos: null, cols: null, oriSrc: 'noch keine Daten', oriTs: 0,
   target: null, mode: 'cam', modeLock: null, stream: null, track: null, torch: false, dir: null,
   route: null, steer: null, routeBusy: false, routeTs: 0, offCount: 0,
   map: null, L: {}, follow: true, wake: null, lastFrame: 0, lastMap: 0, sensor: null, started: false
@@ -438,7 +523,8 @@ function parseGpx(text, maxLogs) {
         lat, lon, d: num(txt(gc, 'difficulty')), t: num(txt(gc, 'terrain')), size: normSize(txt(gc, 'container')),
         hint: txt(gc, 'encoded_hints'), owner: txt(gc, 'placed_by') || txt(gc, 'owner'),
         found: /found/i.test(txt(w, 'sym')), disabled: gc.getAttribute('available') === 'False', archived: gc.getAttribute('archived') === 'True',
-        note: '', corrected: false, logs, wpts: [], src: 'gpx'
+        note: '', corrected: false, logs, wpts: [], src: 'gpx',
+        desc: [txt(gc, 'short_description'), txt(gc, 'long_description')].filter(Boolean).join('\n\n')
       });
     } else {
       const par = w.getElementsByTagNameNS('*', 'Parent')[0];
@@ -521,6 +607,7 @@ function mapOkapi(c) {
     geocode: c.code, name: c.name, type: normType(c.type), lat, lon, d: num(c.difficulty), t: num(c.terrain), size: normSize(c.size2),
     hint: c.hint2 || '', owner: c.owner ? c.owner.username : '', found: !!c.is_found,
     disabled: c.status === 'Temporarily unavailable', archived: c.status === 'Archived', note: c.gc_code ? 'auch bei GC: ' + c.gc_code : '', corrected: false,
+    desc: [c.short_description, c.description].filter(Boolean).join('\n\n'),
     logs: (c.latest_logs || []).map(l => ({ date: toMs(l.date), type: l.type, author: l.user ? l.user.username : '', text: stripHtml(l.comment) })),
     wpts: (c.alt_wpts || []).map(w => { const [a, b] = String(w.location).split('|').map(Number); return { name: w.description || w.name, prefix: w.name, lat: a, lon: b, type: w.type_name || w.type || '', note: '' }; }),
     src: 'oc'
@@ -544,7 +631,7 @@ async function loadOcNearby() {
   for (let i = 0; i < codes.length; i += 50) {
     const g = await okapi('caches/geocaches', {
       cache_codes: codes.slice(i, i + 50).join('|'),
-      fields: 'code|name|location|type|status|difficulty|terrain|size2|hint2|latest_logs|alt_wpts|owner|gc_code' + (uuid ? '|is_found' : ''),
+      fields: 'code|name|location|type|status|difficulty|terrain|size2|hint2|latest_logs|alt_wpts|owner|gc_code|short_description|description' + (uuid ? '|is_found' : ''),
       lpc: S.set.maxLogs, log_fields: 'date|user|type|comment', langpref: 'de|en', user_uuid: uuid || ''
     });
     for (const c of Object.values(g)) if (c) out.push(mapOkapi(c));
@@ -557,7 +644,7 @@ async function loadOcNearby() {
 function setTarget(t) {
   S.target = t; idbPut('meta', t, 'target').catch(() => {});
   S.route = null; S.steer = null;
-  renderTop(); drawCacheMarkers(); closeSheet();
+  renderTop(); drawCacheMarkers(); closeSheet(); renderStage();
   if (S.set.routing) routeSoon();
 }
 /* schnelles Durchklicken von Zielen löst nur eine Anfrage aus (Rücksicht auf den öffentlichen Valhalla-Server) */
@@ -737,8 +824,7 @@ async function toggleTorch() {
   catch (e) { toast('Lampe: ' + e.message); }
   updateButtons();
 }
-async function takePhoto() {
-  if (!S.track && !(await startCamera())) return;
+async function grabFrame() {
   let blob = null;
   try { if ('ImageCapture' in window) blob = await new window.ImageCapture(S.track).takePhoto(); } catch (e) { console.warn('takePhoto', e); }
   if (!blob) {
@@ -746,9 +832,23 @@ async function takePhoto() {
     c.getContext('2d').drawImage(v, 0, 0); blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
   }
   if (S.torch) { try { await S.track.applyConstraints({ advanced: [{ torch: true }] }); } catch (e) { /* egal */ } }
+  return blob;
+}
+async function savePhoto(blob, label) {
   const t = S.target;
-  await idbPut('photos', { geocode: t ? t.geocode || '' : '', name: t ? (t.name || t.label || '') : '', ts: Date.now(), lat: S.pos && S.pos.lat, lon: S.pos && S.pos.lon, blob });
+  await idbPut('photos', { geocode: t ? t.geocode || '' : '', name: label || (t ? (t.name || t.label || '') : ''), ts: Date.now(), lat: S.pos && S.pos.lat, lon: S.pos && S.pos.lon, blob });
+}
+async function takePhoto() {
+  if (!S.track && !(await startCamera())) return;
+  const blob = await grabFrame(); await savePhoto(blob);
+  const t = S.target;
   flash(); toast('📸 Foto gespeichert' + (t && t.geocode ? ' zu ' + t.geocode : ''));
+}
+async function shrinkImage(blob, max, q) {
+  const bmp = await createImageBitmap(blob), k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  return cv.toDataURL('image/jpeg', q);
 }
 async function keepAwake() {
   if (!S.set.keepAwake || !('wakeLock' in navigator) || S.wake) return;
@@ -803,7 +903,7 @@ function drawCacheMarkers() {
     box.innerHTML = `<b>${esc(c.name)}</b><br>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}<br><button class="pbtn">Als Ziel</button>`;
     box.querySelector('button').onclick = () => { targetCache(c.geocode); S.map.closePopup(); };
     m.bindPopup(box); m.addTo(S.L.caches);
-    if (isT) for (const w of c.wpts || []) L.circleMarker([w.lat, w.lon], { radius: 5, color: '#ffdc00', weight: 2, fillColor: '#fff', fillOpacity: 0.8 }).bindPopup(esc(w.prefix + ' ' + w.name)).addTo(S.L.caches);
+    if (isT) for (const w of (c.wpts || []).filter(x => x.lat != null)) L.circleMarker([w.lat, w.lon], { radius: 5, color: '#ffdc00', weight: 2, fillColor: '#fff', fillOpacity: 0.8 }).bindPopup(esc(w.prefix + ' ' + w.name)).addTo(S.L.caches);
   }
   const ai = S.target && S.ai.get(S.target.geocode);
   for (const z of (ai && ai.zones) || []) if (z.lat != null) {
@@ -919,7 +1019,7 @@ function showList(filter = '') {
 /* ---------- Blätter: Cache-Infos + Hint ---------- */
 function showInfo() {
   const c = curCache(); if (!c) return toast('Kein Cache als Ziel');
-  const wp = (c.wpts || []).map((w, i) => `<li class="row" data-w="${i}"><div class="grow"><b>${esc(w.prefix)} ${esc(w.name)}</b><small>${esc(w.type)} · ${fmtCoord(w.lat, w.lon)}</small></div><span class="dd">Ziel</span></li>`).join('');
+  const wp = (c.wpts || []).map((w, i) => `<li class="row" ${w.lat != null ? `data-w="${i}"` : ''}><div class="grow"><b>${esc(w.prefix)} ${esc(w.name)}</b><small>${esc(w.type)} · ${w.lat != null ? fmtCoord(w.lat, w.lon) : 'ohne Koordinaten'}${w.note ? ' · ' + esc(stripHtml(w.note).slice(0, 140)) : ''}</small></div><span class="dd">${w.lat != null ? 'Ziel' : ''}</span></li>`).join('');
   openSheet(c.name, `
     <p class="sub">${esc(c.geocode)} · ${(TYPE_INFO[c.type] || TYPE_INFO.other)[0]} · D${c.d || '?'}/T${c.t || '?'} ${c.size ? '· ' + esc(c.size) : ''} ${c.owner ? '· von ' + esc(c.owner) : ''}</p>
     <p class="coord">${fmtCoord(c.lat, c.lon)}${c.corrected ? ' (korrigiert)' : ''}</p>
@@ -928,7 +1028,8 @@ function showInfo() {
     <div class="tools"><button id="hShow">👁 Anzeigen</button><button id="hRot">🔤 ROT13</button><button id="hCache">🎯 Cache als Ziel</button></div>
     ${c.note ? `<h4>Persönliche Notiz</h4><div class="hint">${esc(c.note)}</div>` : ''}
     ${wp ? `<h4>Wegpunkte</h4><ul class="list">${wp}</ul>` : ''}
-    <div class="tools"><button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
+    <div class="tools"><button id="hMulti">🧩 Stationen</button><button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
+    b.querySelector('#hMulti').onclick = () => run(() => showMulti(c));
     const h = b.querySelector('#hint');
     b.querySelector('#hShow').onclick = () => h.classList.toggle('blur');
     b.querySelector('#hRot').onclick = () => { h.textContent = rot13(h.textContent); h.classList.remove('blur'); };
@@ -983,15 +1084,19 @@ async function resolveZones(c, res) {
   }
   return zones;
 }
-async function aiAnalyze(c) {
+async function kiCall(body) {
   if (!S.set.apiUrl) throw new Error('KI-Adresse fehlt (Einstellungen)');
+  const r = await fetch(S.set.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ ok: false, error: 'Antwort nicht lesbar (HTTP ' + r.status + ')' }));
+  if (!j.ok) throw new Error('KI: ' + (j.error || 'HTTP ' + r.status));
+  return j;
+}
+async function aiAnalyze(c) {
   const body = {
     geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], d: c.d, t: c.t, size: c.size, hint: c.hint, lat: c.lat, lon: c.lon,
     logs: (c.logs || []).slice(0, 40).map(l => ({ date: l.date ? new Date(l.date).toISOString().slice(0, 10) : '', type: logTypeInfo(l.type)[0], author: l.author, text: String(l.text || '').slice(0, 900) }))
   };
-  const r = await fetch(S.set.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(body) });
-  const j = await r.json().catch(() => ({ ok: false, error: 'Antwort nicht lesbar (HTTP ' + r.status + ')' }));
-  if (!j.ok) throw new Error('KI: ' + (j.error || 'HTTP ' + r.status));
+  const j = await kiCall(body);
   const res = j.result || {}; res.ts = Date.now(); res.model = j.model || '';
   res.zones = await resolveZones(c, res);
   await idbPut('ai', { geocode: c.geocode, ...res });
@@ -1040,7 +1145,9 @@ function showAi() {
        ${zo.unresolved ? '<small class="warn">Bezugspunkt nicht in OpenStreetMap gefunden</small>' : `<small>${zo.anchorDist != null ? 'Bezugspunkt ' + zo.anchorDist + ' m von den Listing-Koordinaten · ' : ''}Radius ${Math.round(zo.r)} m</small> <button data-z="${i}">🎯 Als Ziel</button>`}</li>`).join('') + '</ul>' : ''}
     <p class="sub">${esc(a.model || '')} · ${fmtDate(a.ts)} – aus den Logs gezogen, Zitat antippen zeigt den ganzen Log.</p>`;
   }
-  openSheet(`KI · ${c.geocode}`, body + `<div class="tools"><button id="aGo">🤖 ${a ? 'Neu auswerten' : 'Logs auswerten'}</button></div>`, b => {
+  openSheet(`KI · ${c.geocode}`, body + `<div class="tools"><button id="aGo">🤖 ${a ? 'Neu auswerten' : 'Logs auswerten'}</button><button id="aAsk">❓ Foto-Frage</button><button id="aMulti">🧩 Stationen</button></div>`, b => {
+    b.querySelector('#aAsk').onclick = () => run(() => showFotoFrage(c, {}));
+    b.querySelector('#aMulti').onclick = () => run(() => showMulti(c));
     b.querySelector('#aGo').onclick = () => run(async () => { toast('🤖 werte aus …', 30000); await aiAnalyze(c); toast('✅ fertig'); drawCacheMarkers(); showAi(); });
     b.querySelectorAll('button[data-z]').forEach(bt => { bt.onclick = () => { const zo = a.zones[+bt.dataset.z]; setTarget({ kind: 'zone', geocode: c.geocode, lat: zo.lat, lon: zo.lon, label: zo.label, r: zo.r, name: c.name }); }; });
     b.querySelectorAll('q[data-l]').forEach(q => {
@@ -1051,6 +1158,196 @@ function showAi() {
         box.hidden = !box.hidden;
       };
     });
+  });
+}
+
+/* ---------- Multi: Stationen, nächste Station, Foto → KI ---------- */
+const multiKey = g => 'multi:' + g;
+async function getMulti(g) {
+  if (!S.multi.has(g)) S.multi.set(g, (await idbGet('meta', multiKey(g)).catch(() => null)) || null);
+  return S.multi.get(g);
+}
+function saveMulti(m) { S.multi.set(m.geocode, m); idbPut('meta', m, multiKey(m.geocode)).catch(() => {}); }
+function listingBase(c) { return c.orig || { lat: c.lat, lon: c.lon }; }
+function multiState(c, m) {
+  const vars = m.werte || {}, base = listingBase(c), pts = {};
+  const st = (m.stationen || []).map(s => {
+    const r = resolvePoint(s, vars, base, pts);
+    if (r.lat != null) pts[String(s.nr)] = r;
+    const done = !!(m.erledigt || {})[s.nr] || ((s.variablen || []).length > 0 && stationVarsDone(s, vars));
+    return { s, r, done };
+  });
+  return { st, cur: st.findIndex(x => !x.done), fin: resolvePoint(m.final, vars, base, pts), base };
+}
+async function aiMulti(c) {
+  const desc = stripHtml(c.desc || '');
+  if (desc.length < 40 && !(c.wpts || []).length) throw new Error('Keine Beschreibung gespeichert. In c:geo den Cache mit Details speichern (oder GPX mit Beschreibung) und neu laden.');
+  const base = listingBase(c);
+  const j = await kiCall({
+    aktion: 'multi', geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], start: fmtCoord(base.lat, base.lon),
+    beschreibung: desc.slice(0, 16000),
+    wegpunkte: (c.wpts || []).map(w => ({ prefix: w.prefix, name: w.name, coord: w.lat != null ? fmtCoord(w.lat, w.lon) : '', note: stripHtml(w.note || '').slice(0, 400) }))
+  });
+  const old = await getMulti(c.geocode);
+  const m = { geocode: c.geocode, ...j.result, model: j.model || '', ts: Date.now(), werte: old ? old.werte || {} : {}, erledigt: {}, foto: {} };
+  saveMulti(m);
+  return m;
+}
+async function stationFoto(c, idx, blob) {
+  const m = await getMulti(c.geocode), st = m && m.stationen[idx];
+  if (!st) return;
+  if (!blob) {
+    if (!S.track && !(await startCamera())) return;
+    blob = await grabFrame(); flash();
+  }
+  await savePhoto(blob, `${c.geocode} S${st.nr} ${st.name}`);
+  toast('🤖 lese das Foto …', 60000);
+  const bild = await shrinkImage(blob, 2048, 0.85);
+  const j = await kiCall({ aktion: 'foto', geocode: c.geocode, station: { name: st.name, aufgabe: st.aufgabe, variablen: st.variablen }, regeln: m.regeln || '', bild });
+  m.foto = m.foto || {}; m.foto[st.nr] = { ...j.result, model: j.model || '', ts: Date.now() };
+  saveMulti(m);
+  toast('✅ Foto gelesen – Werte prüfen und übernehmen');
+  showMulti(c, st.nr);
+}
+/* Foto aus der Kamera-App des Handys (capture) oder aus der Galerie – volle Qualität, Zoom, HDR */
+function pickImage(cb, camera) {
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+  if (camera) i.setAttribute('capture', 'environment');
+  i.onchange = () => { if (i.files[0]) cb(i.files[0]); };
+  i.click();
+}
+/* Kärtchen oben: nächste Station mit Aufgabe */
+async function renderStage() {
+  const el = $('#stage'), c = curCache();
+  if (!c) { el.hidden = true; return; }
+  const m = await getMulti(c.geocode);
+  if (curCache() !== c) return;
+  let html;
+  if (!m) {
+    if (!['multi', 'mystery', 'wherigo'].includes(c.type) || !c.desc) { el.hidden = true; return; }
+    html = `<div class="st-h"><b>🧩 Stationen</b></div><div class="st-t">Die KI kann die Stationen aus dem Listing lesen.</div>
+      <div class="tools"><button data-a="open">🤖 Stationen lesen</button></div>`;
+  } else {
+    const ms = multiState(c, m);
+    if (ms.cur < 0) {
+      const f = ms.fin;
+      html = `<div class="st-h" data-a="min"><b>🏁 Final</b><span>${ms.st.length} Stationen erledigt</span></div>
+        <div class="st-t coord">${esc(f.lat != null ? fmtCoord(f.lat, f.lon) : (f.text || '–'))}${f.missing && f.missing.length ? ` <span class="warn">fehlt: ${f.missing.join(', ')}</span>` : ''}</div>
+        <div class="tools">${f.lat != null ? '<button data-a="fin">🎯 Final als Ziel</button>' : ''}<button data-a="open">✏️ Stationen</button></div>`;
+    } else {
+      const x = ms.st[ms.cur], st = x.s, vars = m.werte || {};
+      const vtxt = (st.variablen || []).map(v => `${esc(v.name)}=${vars[v.name] != null && vars[v.name] !== '' ? esc(vars[v.name]) : '?'}`).join(' ');
+      const d = x.r.lat != null && S.pos ? fmtDist(haversine(S.pos.lat, S.pos.lon, x.r.lat, x.r.lon)) : '';
+      html = `<div class="st-h" data-a="min"><b>🧩 Station ${ms.cur + 1}/${ms.st.length} · ${esc(st.name)}</b><span>${d}</span></div>
+        <div class="st-t">${esc(st.aufgabe || 'Keine Aufgabe im Listing gefunden.')}</div>
+        ${vtxt ? `<div class="st-v">${vtxt}</div>` : ''}
+        ${x.r.lat == null && x.r.text ? `<div class="st-v">📍 ${esc(x.r.text)}${x.r.missing && x.r.missing.length ? ` <span class="warn">fehlt: ${x.r.missing.join(', ')}</span>` : ''}</div>` : ''}
+        <div class="tools">${(st.variablen || []).length ? '<button data-a="foto">📸 Foto → KI</button><button data-a="gal">🖼</button>' : '<button data-a="done">✓ erledigt</button>'}
+          <button data-a="open">✏️ Werte</button>${x.r.lat != null ? '<button data-a="go">🎯 Ziel</button>' : ''}</div>`;
+      el.dataset.idx = ms.cur;
+    }
+  }
+  el.innerHTML = html; el.hidden = false; el.classList.toggle('min', S.stageMin);
+  el.querySelectorAll('[data-a]').forEach(b => {
+    b.onclick = ev => {
+      ev.stopPropagation();
+      const a = b.dataset.a;
+      if (a === 'min') { S.stageMin = !S.stageMin; el.classList.toggle('min', S.stageMin); return; }
+      if (a === 'open') return run(() => showMulti(c));
+      if (a === 'foto' || a === 'gal') return pickImage(f => run(() => stationFoto(c, +el.dataset.idx, f)), a === 'foto');
+      run(async () => {
+        const mm = await getMulti(c.geocode), ms = multiState(c, mm), i = +el.dataset.idx;
+        if (a === 'done') { mm.erledigt = mm.erledigt || {}; mm.erledigt[ms.st[i].s.nr] = true; saveMulti(mm); renderStage(); }
+        if (a === 'go') { const x = ms.st[i]; setTarget({ kind: 'wpt', geocode: c.geocode, lat: x.r.lat, lon: x.r.lon, label: `S${x.s.nr} ${x.s.name}`, name: c.name }); }
+        if (a === 'fin') setTarget({ kind: 'wpt', geocode: c.geocode, lat: ms.fin.lat, lon: ms.fin.lon, label: 'Final (berechnet)', name: c.name });
+      });
+    };
+  });
+}
+/* Blatt: alle Stationen, Werte eintragen, Foto-Ergebnisse übernehmen, Final */
+async function showMulti(c, focusNr) {
+  c = c || curCache(); if (!c) return toast('Kein Cache als Ziel');
+  const m = await getMulti(c.geocode);
+  if (!m) {
+    const n = stripHtml(c.desc || '').length;
+    openSheet(`🧩 Stationen · ${c.geocode}`, `<p>${n ? `Die Beschreibung (${n} Zeichen) und ${(c.wpts || []).length} Wegpunkte gehen an dein KI-Skript. Die KI zieht Stationen, Aufgaben, Variablen und die Finalformel heraus.` : 'Für diesen Cache ist keine Beschreibung gespeichert. In c:geo den Cache mit Details speichern oder GPX mit Beschreibung laden.'}</p>
+      <div class="tools"><button id="mGo">🤖 Stationen aus dem Listing lesen</button></div>`, b => {
+      b.querySelector('#mGo').onclick = () => run(async () => { toast('🤖 lese das Listing …', 60000); await aiMulti(c); toast('✅ Stationen gelesen'); renderStage(); showMulti(c); });
+    });
+    return;
+  }
+  const ms = multiState(c, m), vars = m.werte || {};
+  const miss = r => `${r.missing && r.missing.length ? ` <small class="warn">fehlt: ${r.missing.join(', ')}</small>` : ''}${r.err ? ` <small class="warn">${esc(r.err)}</small>` : ''}`;
+  const stHtml = ms.st.map((x, i) => {
+    const s = x.s, r = x.r, f = (m.foto || {})[s.nr];
+    const coord = r.lat != null ? `<span class="coord">${esc(fmtCoord(r.lat, r.lon))}</span>` : r.text ? `<span class="coord">${esc(r.text)}</span>${miss(r)}` : '<small>Ort nur beschrieben</small>';
+    const inputs = (s.variablen || []).map(v => `<div class="var"><b>${esc(v.name)}</b><input data-v="${esc(v.name)}" inputmode="decimal" value="${esc(vars[v.name] == null ? '' : vars[v.name])}"><button data-ask="${esc(v.name)}" title="nur diese Frage per Foto">📸</button><small>${esc(v.frage)}</small></div>`).join('');
+    const foto = f ? `<div class="foto"><small>📸 ${esc(f.gelesen || '')} <i>(${esc(f.model || '')})</i></small>${(f.werte || []).map(w => `<div class="fw"><b>${esc(w.name)} = ${esc(w.wert || '–')}</b> <small>${esc(w.sicherheit)} · ${esc(w.begruendung)}</small>${w.wert !== '' ? ` <button data-take="${esc(w.name)}" data-val="${esc(w.wert)}">Übernehmen</button>` : ''}</div>`).join('')}</div>` : '';
+    return `<li class="stn${i === ms.cur ? ' cur' : ''}${x.done ? ' done' : ''}" id="stn${s.nr}"><div class="stn-h">${x.done ? '✅' : i === ms.cur ? '👉' : '⬜'} <b>S${s.nr} · ${esc(s.name)}</b></div>
+      <div>${coord}</div><div class="aufg">${esc(s.aufgabe)}</div>${inputs}${foto}
+      <div class="tools">${(s.variablen || []).length ? `<button data-foto="${i}">📸 Kamera → KI</button><button data-file="${i}">🖼 Galerie → KI</button>` : ''}${r.lat != null ? `<button data-go="${i}">🎯 Ziel</button>` : ''}<button data-done="${s.nr}">${(m.erledigt || {})[s.nr] ? '↩ offen' : '✓ erledigt'}</button></div></li>`;
+  }).join('');
+  const fin = ms.fin, dist = fin.lat != null ? haversine(ms.base.lat, ms.base.lon, fin.lat, fin.lon) : null;
+  openSheet(`🧩 Stationen · ${c.geocode}`, `
+    ${m.regeln ? `<p class="sub">Regeln: ${esc(m.regeln)}</p>` : ''}
+    <ul class="list">${stHtml || '<li class="empty">Keine Stationen erkannt.</li>'}</ul>
+    <div class="stn final"><div class="stn-h">🏁 <b>Final</b></div><div class="sub">${esc(m.final && (m.final.text || m.final.vorlage) || '')}</div>
+      <div class="coord big">${esc(fin.lat != null ? fmtCoord(fin.lat, fin.lon) : fin.text || '–')}</div>${miss(fin)}
+      ${dist != null ? `<small>${fmtDist(dist)} vom Start${dist > 3219 ? ' – <b class="warn">mehr als 2 Meilen, Werte prüfen</b>' : ''} · mit Logs/Checker prüfen</small>` : ''}
+      <div class="tools">${fin.lat != null ? '<button id="mFin">🎯 Final als Ziel</button>' : ''}</div></div>
+    <p class="sub">${esc(m.model || '')} · ${fmtDate(m.ts)} – von der KI aus dem Listing gelesen, Formeln prüfen.</p>
+    <div class="tools"><button id="mAsk">❓ Foto-Frage</button><button id="mRe">🤖 Neu lesen</button><button id="mClr">🗑 Werte löschen</button></div>`, b => {
+    b.querySelector('#mAsk').onclick = () => showFotoFrage(c, {});
+    const redraw = () => { const top = $('#sheetBody').scrollTop; showMulti(c).then(() => { $('#sheetBody').scrollTop = top; }); renderStage(); };
+    b.querySelectorAll('input[data-v]').forEach(inp => {
+      inp.onchange = () => { m.werte = m.werte || {}; const v = inp.value.trim(); if (v === '') delete m.werte[inp.dataset.v]; else m.werte[inp.dataset.v] = v; saveMulti(m); redraw(); };
+    });
+    b.querySelectorAll('[data-take]').forEach(bt => { bt.onclick = () => { m.werte = m.werte || {}; m.werte[bt.dataset.take] = bt.dataset.val; saveMulti(m); redraw(); }; });
+    b.querySelectorAll('[data-foto]').forEach(bt => { bt.onclick = () => pickImage(f => run(() => stationFoto(c, +bt.dataset.foto, f)), true); });
+    b.querySelectorAll('[data-file]').forEach(bt => { bt.onclick = () => pickImage(f => run(() => stationFoto(c, +bt.dataset.file, f))); });
+    b.querySelectorAll('[data-ask]').forEach(bt => { bt.onclick = () => { const v = ms.st.flatMap(x => x.s.variablen || []).find(y => y.name === bt.dataset.ask); showFotoFrage(c, { frage: v ? v.frage : '', varName: bt.dataset.ask }); }; });
+    b.querySelectorAll('[data-go]').forEach(bt => { bt.onclick = () => { const x = ms.st[+bt.dataset.go]; setTarget({ kind: 'wpt', geocode: c.geocode, lat: x.r.lat, lon: x.r.lon, label: `S${x.s.nr} ${x.s.name}`, name: c.name }); }; });
+    b.querySelectorAll('[data-done]').forEach(bt => { bt.onclick = () => { m.erledigt = m.erledigt || {}; const k = bt.dataset.done; if (m.erledigt[k]) delete m.erledigt[k]; else m.erledigt[k] = true; saveMulti(m); redraw(); }; });
+    const fb = b.querySelector('#mFin'); if (fb) fb.onclick = () => setTarget({ kind: 'wpt', geocode: c.geocode, lat: fin.lat, lon: fin.lon, label: 'Final (berechnet)', name: c.name });
+    b.querySelector('#mRe').onclick = () => run(async () => { if (!confirm('Stationen neu aus dem Listing lesen? Eingetragene Werte bleiben.')) return; toast('🤖 lese das Listing …', 60000); await aiMulti(c); toast('✅ neu gelesen'); renderStage(); showMulti(c); });
+    b.querySelector('#mClr').onclick = () => { if (!confirm('Alle eingetragenen Werte dieses Caches löschen?')) return; m.werte = {}; m.erledigt = {}; m.foto = {}; saveMulti(m); redraw(); };
+    if (focusNr != null) { const el = b.querySelector('#stn' + focusNr); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 50); }
+  });
+}
+
+/* Freie Frage zu einem Foto, z. B. „Wie viele Latten hat der Zaun?“ → Zahl; optional als Variable übernehmen */
+async function showFotoFrage(c, preset) {
+  c = c || curCache();
+  const m = c ? await getMulti(c.geocode) : null;
+  const names = m ? [...new Set((m.stationen || []).flatMap(s => (s.variablen || []).map(v => v.name)))] : [];
+  const p = preset || {};
+  openSheet('❓ Foto-Frage', `
+    <label class="f"><span>Was soll die KI auf dem Foto bestimmen?</span>
+      <textarea id="fq" rows="2" placeholder="z. B. Wie viele Latten hat der Zaun?">${esc(p.frage || '')}</textarea></label>
+    ${names.length ? `<label class="f"><span>Ergebnis übernehmen als</span><select id="fv"><option value="">– nicht übernehmen –</option>${names.map(n => `<option${n === p.varName ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></label>` : ''}
+    <div class="tools"><button id="fCam">📸 Kamera-App</button><button id="fGal">🖼 Galerie</button></div>
+    <div id="fr"></div>`, b => {
+    const go = cam => {
+      const frage = b.querySelector('#fq').value.trim();
+      if (!frage) return toast('Erst die Frage eintragen');
+      pickImage(file => run(async () => {
+        await savePhoto(file, `${c ? c.geocode + ' ' : ''}${frage}`);
+        toast('🤖 werte das Foto aus …', 60000);
+        const bild = await shrinkImage(file, 2048, 0.85);
+        const vsel = b.querySelector('#fv'), vn = vsel && vsel.value ? vsel.value : 'X';
+        const j = await kiCall({ aktion: 'foto', geocode: c ? c.geocode : 'FRAGE', station: { name: 'Frage', aufgabe: frage, variablen: [{ name: vn, frage }] }, regeln: m ? m.regeln || '' : '', bild });
+        const w = (j.result.werte || [])[0] || { wert: '', begruendung: '', sicherheit: 'niedrig' };
+        const url = URL.createObjectURL(file);
+        b.querySelector('#fr').innerHTML = `<div class="answer"><img src="${url}"><div><div class="big">${esc(w.wert || '?')}</div>
+          <small>Sicherheit: ${esc(w.sicherheit)}</small></div></div><p>${esc(w.begruendung)}</p><p class="sub">Gesehen: ${esc(j.result.gelesen || '')} · ${esc(j.model || '')}</p>
+          ${vsel && vsel.value && w.wert ? `<div class="tools"><button id="fTake">Als ${esc(vsel.value)} = ${esc(w.wert)} übernehmen</button></div>` : ''}`;
+        toast('✅ ausgewertet – bitte nachprüfen');
+        const tk = b.querySelector('#fTake');
+        if (tk) tk.onclick = () => { m.werte = m.werte || {}; m.werte[vsel.value] = w.wert; saveMulti(m); renderStage(); toast(`${vsel.value} = ${w.wert} eingetragen`); showMulti(c); };
+      }), cam);
+    };
+    b.querySelector('#fCam').onclick = () => go(true);
+    b.querySelector('#fGal').onclick = () => go(false);
   });
 }
 
@@ -1180,7 +1477,7 @@ async function start() {
 async function init() {
   document.body.dataset.mode = 'cam';
   await loadAll().catch(e => console.error(e));
-  renderTop(); updateButtons();
+  renderTop(); updateButtons(); renderStage();
   $('#bStart').onclick = () => run(start);
   $('#bList').onclick = () => showList();
   $('#bRoute').onclick = toggleRouting;
@@ -1207,5 +1504,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

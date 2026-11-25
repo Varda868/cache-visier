@@ -7,25 +7,48 @@ declare(strict_types=1);
 
 require __DIR__ . '/inc.php'; // Konfiguration laden, Herkunft, Methode und Token prüfen
 
-$raw = file_get_contents('php://input', false, null, 0, 400000);
+$raw = file_get_contents('php://input', false, null, 0, 6000000); // Fotos (Base64) brauchen Platz
 $in = json_decode((string)$raw, true);
 if (!is_array($in) || empty($in['geocode'])) out(400, ['ok' => false, 'error' => 'Ungültige Anfrage']);
 
+/* Aufgaben: logs (Logs auswerten), multi (Stationen aus dem Listing lesen), foto (Werte an einer Station vom Foto ablesen) */
+$aktion = in_array($in['aktion'] ?? 'logs', ['logs', 'multi', 'foto'], true) ? ($in['aktion'] ?? 'logs') : 'logs';
+$img = null;
+if ($aktion === 'foto') {
+  if (!preg_match('#^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$#', (string)($in['bild'] ?? ''), $m) || strlen($m[2]) > 5500000) {
+    out(400, ['ok' => false, 'error' => 'Foto fehlt oder ist zu groß']);
+  }
+  $img = ['mime' => $m[1], 'b64' => $m[2]];
+}
 if (!count_request()) out(429, ['ok' => false, 'error' => 'Tageslimit erreicht (' . DAILY_LIMIT . ')']);
 
-$prompt = build_prompt($in);
+[$prompt, $sch, $norm, $tool] = match ($aktion) {
+  'multi' => [build_multi_prompt($in), schema_multi(), 'normalize_multi', 'stationen'],
+  'foto' => [build_foto_prompt($in), schema_foto(), 'normalize_foto', 'ablesung'],
+  default => [build_prompt($in), schema(), 'normalize', 'auswertung'],
+};
 $errors = [];
+$tried = 0;
 foreach (($PROVIDERS ?? []) as $p) {
   if (empty($p['on']) || (($p['type'] ?? 'openai') !== 'anthropic' && empty($p['base']))) continue;
   if (!empty($p['needs_key']) && empty($p['key'])) continue; // Schlüssel noch nicht eingetragen
+  if ($img && !has_vision($p)) continue;                     // Foto nur an Modelle, die Bilder verstehen
+  $tried++;
   try {
-    [$result, $usage, $model] = ($p['type'] ?? 'openai') === 'anthropic' ? call_anthropic($p, $prompt) : call_openai($p, $prompt);
-    out(200, ['ok' => true, 'result' => normalize($result), 'usage' => $usage, 'model' => ($p['name'] ?? '?') . ' · ' . $model, 'fallbacks' => $errors]);
+    [$result, $usage, $model] = ($p['type'] ?? 'openai') === 'anthropic' ? call_anthropic($p, $prompt, $sch, $tool, $img) : call_openai($p, $prompt, $sch, $img);
+    out(200, ['ok' => true, 'result' => $norm($result), 'usage' => $usage, 'model' => ($p['name'] ?? '?') . ' · ' . $model, 'fallbacks' => $errors]);
   } catch (Throwable $e) {
     $errors[] = ($p['name'] ?? '?') . ': ' . clip($e->getMessage(), 160);
   }
 }
+if ($img && !$tried) out(502, ['ok' => false, 'error' => 'Kein Anbieter für Fotos eingerichtet (z. B. Gemini mit Schlüssel)']);
 out(502, ['ok' => false, 'error' => $errors ? implode(' | ', $errors) : 'Kein Anbieter eingerichtet (config.php)']);
+
+/* Bilder: per 'vision' => true/false in config.php; ohne Angabe gelten Gemini und Claude als bildfähig */
+function has_vision(array $p): bool {
+  if (isset($p['vision'])) return (bool)$p['vision'];
+  return ($p['type'] ?? 'openai') === 'anthropic' || str_contains((string)($p['base'] ?? ''), 'generativelanguage.googleapis.com');
+}
 
 /* ------------------------------------------------------------------ */
 
@@ -149,15 +172,17 @@ function http_post(string $url, array $headers, array $body, int $timeout = 60):
   return $data;
 }
 
-function call_anthropic(array $p, string $prompt): array {
+function call_anthropic(array $p, string $prompt, array $schema, string $tool, ?array $img): array {
   $url = $p['base'] ?? 'https://api.anthropic.com/v1/messages';
   $model = $p['model'] ?? 'claude-haiku-5-5';
   $data = http_post($url, ['x-api-key: ' . ($p['key'] ?? ''), 'anthropic-version: 2023-06-01'], [
     'model' => $model,
     'max_tokens' => 3000,
-    'tools' => [['name' => 'auswertung', 'description' => 'Strukturierte Auswertung der Cache-Logs', 'input_schema' => schema()]],
-    'tool_choice' => ['type' => 'tool', 'name' => 'auswertung'],
-    'messages' => [['role' => 'user', 'content' => $prompt]],
+    'tools' => [['name' => $tool, 'description' => 'Strukturierte Antwort', 'input_schema' => $schema]],
+    'tool_choice' => ['type' => 'tool', 'name' => $tool],
+    'messages' => [['role' => 'user', 'content' => $img
+      ? [['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $img['mime'], 'data' => $img['b64']]], ['type' => 'text', 'text' => $prompt]]
+      : $prompt]],
   ]);
   foreach ($data['content'] ?? [] as $b) {
     if (($b['type'] ?? '') === 'tool_use' && is_array($b['input'] ?? null)) return [$b['input'], $data['usage'] ?? null, $data['model'] ?? $model];
@@ -165,7 +190,7 @@ function call_anthropic(array $p, string $prompt): array {
   throw new RuntimeException('Claude hat keine strukturierte Antwort geliefert');
 }
 
-function call_openai(array $p, string $prompt): array {
+function call_openai(array $p, string $prompt, array $schema, ?array $img): array {
   $base = rtrim($p['base'], '/');
   $headers = [];
   if (!empty($p['key'])) $headers[] = 'Authorization: Bearer ' . $p['key'];
@@ -176,8 +201,10 @@ function call_openai(array $p, string $prompt): array {
     'max_tokens' => (int)($p['max_tokens'] ?? 3000), // Denkmodelle (gpt-oss, Qwen) verbrauchen einen Teil davon fürs Nachdenken
     'messages' => [
       ['role' => 'system', 'content' => 'Antworte ausschließlich mit einem JSON-Objekt nach diesem Schema, ohne weiteren Text: '
-        . json_encode(schema(), JSON_UNESCAPED_UNICODE)],
-      ['role' => 'user', 'content' => $prompt],
+        . json_encode($schema, JSON_UNESCAPED_UNICODE)],
+      ['role' => 'user', 'content' => $img
+        ? [['type' => 'text', 'text' => $prompt], ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $img['mime'] . ';base64,' . $img['b64']]]]
+        : $prompt],
     ],
   ];
   if (!empty($p['json'])) $body['response_format'] = ['type' => 'json_object'];
@@ -252,4 +279,122 @@ function normalize(array $r): array {
     ];
   }
   return $out;
+}
+
+/* ===================== Multi: Stationen aus dem Listing ===================== */
+function build_multi_prompt(array $c): string {
+  $wp = [];
+  foreach (array_slice(is_array($c['wegpunkte'] ?? null) ? $c['wegpunkte'] : [], 0, 40) as $w) {
+    if (!is_array($w)) continue;
+    $wp[] = '- ' . clip((string)($w['prefix'] ?? ''), 8) . ' ' . clip((string)($w['name'] ?? ''), 80) . ' | ' . clip((string)($w['coord'] ?? ''), 40)
+      . ' | ' . clip((string)($w['note'] ?? ''), 400);
+  }
+  $desc = mb_substr(trim((string)($c['beschreibung'] ?? '')), 0, 16000);
+  return "Lies aus dem Listing eines Geocaches die Stationen heraus, damit ein Cacher vor Ort Station für Station abarbeiten kann.\n\n"
+    . 'Cache: ' . clip((string)$c['geocode'], 12) . ' – ' . clip((string)($c['name'] ?? ''), 120) . ' · Typ: ' . clip((string)($c['type'] ?? ''), 20) . "\n"
+    . 'Listing-Koordinaten (Start): ' . clip((string)($c['start'] ?? ''), 40) . "\n\n"
+    . "Beschreibung:\n" . $desc . "\n\n"
+    . ($wp ? "Wegpunkte:\n" . implode("\n", $wp) . "\n\n" : '')
+    . "Regeln:\n"
+    . "- stationen in der Reihenfolge des Listings (ohne das Final). nr ab 1. name kurz (z. B. 'Brunnen', 'Infotafel').\n"
+    . "- art: 'listing' (Station liegt an den Listing-Koordinaten), 'koordinaten' (feste Koordinaten), 'formel' (Koordinaten mit Variablen),\n"
+    . "  'projektion' (Peilung von einem Punkt), 'unbekannt' (Ort nur beschrieben).\n"
+    . "- vorlage: Koordinaten im Format 'N 48° 22.123 E 010° 53.456'. Unbekannte Teile als {Ausdruck} mit den Variablennamen aus dem Listing\n"
+    . "  und + - * / ( ). Beispiele: 'N 48° 22.ABC' -> 'N 48° 22.{A}{B}{C}'; 'N 48° 2(A+1).(B*C)' -> 'N 48° 2{A+1}.{B*C}'.\n"
+    . "  Funktionen: QS(x) Quersumme, IQS(x) einstellige Quersumme. Ost als E schreiben.\n"
+    . "- projektion: von = 'listing' oder Nummer der Station, distanz in Metern und winkel in Grad, jeweils als Ausdruck (z. B. 'A*10', '2{B}0' NICHT, sondern 'B*10+200').\n"
+    . "- aufgabe: was an der Station zu tun ist, möglichst wörtlich aus dem Listing, vollständig, mit Hinweisen wo man suchen muss.\n"
+    . "- variablen: jede an dieser Station zu ermittelnde Variable mit name (wie im Listing, z. B. A) und frage (genau was zu bestimmen ist,\n"
+    . "  inklusive Umrechnung wie 'Quersumme', 'Buchstabenwert', 'letzte Ziffer').\n"
+    . "- final: Koordinaten des Finals wie oben (art, vorlage, von, distanz, winkel) und text = Originalformel aus dem Listing.\n"
+    . "- regeln: allgemeine Rechenregeln des Listings (z. B. 'Buchstabenwert A=1', 'Ziffern addieren'), sonst leer.\n"
+    . "- Nichts erfinden. Steht etwas nicht im Listing, leer lassen bzw. art 'unbekannt'.";
+}
+
+function schema_multi(): array {
+  $q = ['type' => 'string'];
+  $ort = ['art' => ['type' => 'string', 'enum' => ['listing', 'koordinaten', 'formel', 'projektion', 'unbekannt']],
+    'vorlage' => $q, 'von' => $q, 'distanz' => $q, 'winkel' => $q];
+  return [
+    'type' => 'object',
+    'properties' => [
+      'stationen' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => ['nr' => ['type' => 'integer'], 'name' => $q] + $ort + [
+        'aufgabe' => $q,
+        'variablen' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => ['name' => $q, 'frage' => $q], 'required' => ['name', 'frage']]],
+      ], 'required' => ['nr', 'name', 'art', 'aufgabe', 'variablen']]],
+      'final' => ['type' => 'object', 'properties' => $ort + ['text' => $q], 'required' => ['art', 'vorlage', 'text']],
+      'regeln' => $q,
+    ],
+    'required' => ['stationen', 'final'],
+  ];
+}
+
+function normalize_ort(array $o): array {
+  $arten = ['listing', 'koordinaten', 'formel', 'projektion', 'unbekannt'];
+  return [
+    'art' => in_array($o['art'] ?? '', $arten, true) ? $o['art'] : 'unbekannt',
+    'vorlage' => clip((string)($o['vorlage'] ?? ''), 160),
+    'von' => clip((string)($o['von'] ?? ''), 20),
+    'distanz' => clip((string)($o['distanz'] ?? ''), 80),
+    'winkel' => clip((string)($o['winkel'] ?? ''), 80),
+  ];
+}
+
+function normalize_multi(array $r): array {
+  $st = [];
+  foreach (array_slice(is_array($r['stationen'] ?? null) ? $r['stationen'] : [], 0, 30) as $i => $s) {
+    if (!is_array($s)) continue;
+    $vars = [];
+    foreach (array_slice(is_array($s['variablen'] ?? null) ? $s['variablen'] : [], 0, 20) as $v) {
+      $name = preg_replace('/[^A-Za-z0-9]/', '', (string)($v['name'] ?? ''));
+      if (!is_array($v) || $name === '' || !preg_match('/^[A-Za-z]/', $name)) continue;
+      $vars[] = ['name' => strtoupper(substr($name, 0, 6)), 'frage' => clip((string)($v['frage'] ?? ''), 300)];
+    }
+    $st[] = ['nr' => (int)($s['nr'] ?? ($i + 1)) ?: $i + 1, 'name' => clip((string)($s['name'] ?? ''), 80)] + normalize_ort($s)
+      + ['aufgabe' => mb_substr(trim((string)($s['aufgabe'] ?? '')), 0, 1500), 'variablen' => $vars];
+  }
+  $f = is_array($r['final'] ?? null) ? $r['final'] : [];
+  return ['stationen' => $st, 'final' => normalize_ort($f) + ['text' => clip((string)($f['text'] ?? ''), 300)], 'regeln' => clip((string)($r['regeln'] ?? ''), 600)];
+}
+
+/* ===================== Foto: Werte an einer Station ablesen ===================== */
+function build_foto_prompt(array $c): string {
+  $st = is_array($c['station'] ?? null) ? $c['station'] : [];
+  $fragen = [];
+  foreach (array_slice(is_array($st['variablen'] ?? null) ? $st['variablen'] : [], 0, 20) as $v) {
+    if (is_array($v)) $fragen[] = '- ' . clip((string)($v['name'] ?? ''), 6) . ': ' . clip((string)($v['frage'] ?? ''), 300);
+  }
+  return "Das Foto zeigt eine Station des Geocaches " . clip((string)$c['geocode'], 12) . " (Station: " . clip((string)($st['name'] ?? ''), 80) . ").\n"
+    . 'Aufgabe laut Listing: ' . mb_substr((string)($st['aufgabe'] ?? ''), 0, 1200) . "\n"
+    . 'Rechenregeln: ' . clip((string)($c['regeln'] ?? ''), 400) . "\n\n"
+    . "Gesucht:\n" . implode("\n", $fragen) . "\n\n"
+    . "- gelesen: was auf dem Foto zur Aufgabe passt, wörtlich (Text, Zahlen, Jahreszahlen, Anzahl von Dingen).\n"
+    . "- werte: für jede gesuchte Variable den fertigen Wert nach den Regeln der Frage (z. B. schon die Quersumme bilden).\n"
+    . "  Zählaufgaben (Latten, Fenster, Stufen, Nieten …): jedes Teil einzeln zählen, nicht schätzen; in begruendung die Zählweise nennen\n"
+    . "  (z. B. 'links vom Pfosten 12, rechts 11 = 23'). Ist ein Teil abgeschnitten oder verdeckt, das sagen und sicherheit senken.\n"
+    . "  begruendung kurz: woher der Wert kommt und wie gerechnet. Nicht sicher lesbar oder nicht im Bild: wert leer, sicherheit niedrig.\n"
+    . "- Nichts raten, was nicht im Bild zu sehen ist.";
+}
+
+function schema_foto(): array {
+  $q = ['type' => 'string'];
+  return ['type' => 'object', 'properties' => [
+    'gelesen' => $q,
+    'werte' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
+      'name' => $q, 'wert' => $q, 'begruendung' => $q, 'sicherheit' => ['type' => 'string', 'enum' => ['hoch', 'mittel', 'niedrig']]],
+      'required' => ['name', 'wert', 'begruendung', 'sicherheit']]],
+  ], 'required' => ['gelesen', 'werte']];
+}
+
+function normalize_foto(array $r): array {
+  $w = [];
+  foreach (array_slice(is_array($r['werte'] ?? null) ? $r['werte'] : [], 0, 20) as $x) {
+    if (!is_array($x)) continue;
+    $name = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', (string)($x['name'] ?? '')), 0, 6));
+    if ($name === '') continue;
+    $w[] = ['name' => $name, 'wert' => clip(is_scalar($x['wert'] ?? null) ? (string)$x['wert'] : '', 20),
+      'begruendung' => clip((string)($x['begruendung'] ?? ''), 300),
+      'sicherheit' => in_array($x['sicherheit'] ?? '', ['hoch', 'mittel', 'niedrig'], true) ? $x['sicherheit'] : 'niedrig'];
+  }
+  return ['gelesen' => clip((string)($r['gelesen'] ?? ''), 800), 'werte' => $w];
 }

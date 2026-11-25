@@ -89,6 +89,36 @@ t('Route: Position, Abstand, Punkt voraus', () => {
   assert.deepStrictEqual(A.routePointAt(pts, cum, 1e9), pts[2]); assert.deepStrictEqual(A.routePointAt(pts, cum, -5), pts[0]);
 });
 
+// Multi: Formeln und Koordinaten
+t('Ausdrücke rechnen', () => {
+  assert.strictEqual(A.evalExpr('A*2+B', { A: 3, B: '4' }).value, 10);
+  assert.strictEqual(A.evalExpr('(a+1)*(b-1)', { A: 2, B: 5 }).value, 12);
+  assert.strictEqual(A.evalExpr('QS(1987)', {}).value, 25);
+  assert.strictEqual(A.evalExpr('IQS(1987)', {}).value, 7);
+  assert.strictEqual(A.evalExpr('2^3%5', {}).value, 3);
+  assert.deepStrictEqual(A.evalExpr('A+C', { A: 1 }).missing, ['C']);
+  assert.throws(() => A.evalExpr('A+*', { A: 1 }));
+  assert.throws(() => A.evalExpr('alert(1)', {}));
+});
+t('Koordinaten-Vorlage füllen und lesen', () => {
+  const f = A.fillTemplate('N 48° 2{A+1}.{B*C} E 010° 5{D}.{E}{F}0', { A: 1, B: 12, C: 10, D: 3, E: 4, F: 5 });
+  assert.ok(f.ok); assert.strictEqual(f.text, 'N 48° 22.120 E 010° 53.450');
+  const p = A.parseCoord(f.text); near(p.lat, 48 + 22.12 / 60, 1e-9); near(p.lon, 10 + 53.45 / 60, 1e-9);
+  const g = A.fillTemplate('N 48° 22.{A}{B}{C}', { A: 1 }); assert.ok(!g.ok); assert.deepStrictEqual(g.missing.sort(), ['B', 'C']); assert.strictEqual(g.text, 'N 48° 22.1??');
+  near(A.parseCoord('N48 22.120 O10 53.450').lon, 10 + 53.45 / 60, 1e-9);
+  near(A.parseCoord('48.36867, 10.89083').lat, 48.36867, 1e-9);
+  assert.strictEqual(A.parseCoord('N 48° 62.000 E 010° 53.000'), null);
+});
+t('Stationen auflösen inkl. Peilung', () => {
+  const base = { lat: 48.37, lon: 10.89 }, pts = {};
+  const s1 = A.resolvePoint({ art: 'listing' }, {}, base, pts); pts['1'] = s1; near(s1.lat, 48.37, 1e-12);
+  const s2 = A.resolvePoint({ art: 'projektion', von: '1', distanz: 'A*10', winkel: '90' }, { A: 15 }, base, pts);
+  near(A.haversine(48.37, 10.89, s2.lat, s2.lon), 150, 0.05); near(A.bearing(48.37, 10.89, s2.lat, s2.lon), 90, 0.01);
+  const s3 = A.resolvePoint({ art: 'formel', vorlage: 'N 48° 22.{A}00 E 010° 53.{B}00' }, { A: 3 }, base, pts);
+  assert.deepStrictEqual(s3.missing, ['B']); assert.strictEqual(s3.lat, undefined);
+  assert.ok(A.stationVarsDone({ variablen: [{ name: 'A' }] }, { A: '0' })); assert.ok(!A.stationVarsDone({ variablen: [{ name: 'A' }] }, { A: ' ' }));
+});
+
 // c:geo-Datenbank nachbauen
 let sqlite; try { sqlite = require('node:sqlite'); } catch (e) { sqlite = null; }
 if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
