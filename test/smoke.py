@@ -61,13 +61,19 @@ async def main():
         # KI mit gemocktem fetch (Skript + OSM)
         await pg.evaluate("""() => { const of = window.fetch; window.fetch = async (u, o) => {
           u = String(u);
-          if (u.includes('api/ki.php')) return new Response(JSON.stringify({ok:true, model:'mock', result:{kurzfassung:'Magnet an der Haltestelle', zustand:'gut', letzter_fund:'2025-11-13', dnf_serie:1,
-             versteck_hinweise:[{hinweis:'Magnet', zitat:'magnetisch', log_nr:2}], koordinaten_korrektur:null,
+          if (u.includes('api/ki.php')) return new Response(JSON.stringify({ok:true, model:'Groq · mock', result:{kurzfassung:'Magnetischer Petling unten am Geländer, Logbuch nass.', zustand:'wartung_noetig', letzter_fund:'2025-11-13', letzte_wartung:'', dnf_serie:1,
+             zustand_details:[{punkt:'Logbuch nass', datum:'2025-11-19', zitat:'Logbuch nass', log_nr:1}],
+             suchhilfe:[{kategorie:'versteck', hinweis:'Unterseite Geländer, Ostseite', datum:'2025-11-13', zitat:'8 m neben der Bushaltestelle', log_nr:2},{kategorie:'werkzeug', hinweis:'Pinzette mitnehmen', datum:'2025-11-13', zitat:'TFTC', log_nr:2}],
+             warnungen:[{hinweis:'Zecken im hohen Gras', datum:'2025-11-19', zitat:'Nix gefunden', log_nr:1}], stationen:[], koordinaten_korrektur:null,
              positionen:[{anker:'Bushaltestelle', osm_key:'highway', osm_value:'bus_stop', abstand_m:8, richtung_grad:-1, richtung_text:'neben', zitat:'8 m neben der Bushaltestelle', log_nr:2, sicherheit:'hoch'}]}}));
           if (u.includes('openstreetmap.org/api')) return new Response(JSON.stringify({elements:[{type:'node', id:1, lat:48.37125, lon:10.87105, tags:{highway:'bus_stop', name:'Test'}}]}));
           return of(u, o); }; }""")
         await pg.click('#bAi'); await pg.click('#aGo'); await pg.wait_for_timeout(1200)
         print('KI-Blatt:', (await pg.text_content('#sheetBody'))[:220].replace('\n', ' '))
+        await pg.click('q[data-l="2"] >> nth=0'); await pg.wait_for_timeout(200)
+        print('Ganzer Log nach Antippen:', (await pg.locator('.ai .full:not([hidden])').first.text_content())[:80])
+        print('Abschnitte:', await pg.eval_on_selector_all('#sheetBody h4', 'els => els.map(e => e.textContent)'), '| Badge:', await pg.text_content('.badge'))
+        await pg.screenshot(path='shot-ki-blatt.png')
         zb = pg.locator('button[data-z]'); print('Zonen-Buttons:', await zb.count())
         if await zb.count(): await zb.first.click(); await pg.wait_for_timeout(300); print('Neues Ziel:', await pg.text_content('#tName'), '|', await pg.text_content('#dist'))
         print('Nadel:', await pg.evaluate('document.querySelector("#needle").style.transform'), '| Rand:', await pg.evaluate('document.querySelector("#edge").style.transform'))

@@ -999,7 +999,8 @@ async function aiAnalyze(c) {
   return res;
 }
 async function aiAll() {
-  const todo = [...S.caches.values()].filter(c => !S.ai.has(c.geocode) && (c.logs || []).length && !c.found);
+  // ohne Auswertung oder noch im alten Format (ohne Suchhilfe) → (neu) auswerten
+  const todo = [...S.caches.values()].filter(c => (!S.ai.has(c.geocode) || !S.ai.get(c.geocode).suchhilfe) && (c.logs || []).length && !c.found);
   if (S.pos) todo.sort((a, b) => haversine(S.pos.lat, S.pos.lon, a.lat, a.lon) - haversine(S.pos.lat, S.pos.lon, b.lat, b.lon));
   const list = todo.slice(0, 60);
   if (!list.length) return toast('Nichts auszuwerten (alle schon ausgewertet oder ohne Logs)');
@@ -1009,19 +1010,47 @@ async function aiAll() {
   await Promise.all([worker(), worker()]);
   toast(`✅ ${ok} ausgewertet${fail ? `, ${fail} Fehler` : ''}`); drawCacheMarkers();
 }
+const ZUSTAND = { gut: ['gut', '#2ecc40'], wartung_noetig: ['Wartung nötig', '#ff9f1a'], vermutlich_weg: ['vermutlich weg', '#ff4136'], unklar: ['unklar', '#9aa7b2'] };
+const KAT = { versteck: ['📍', 'Versteck'], behaelter: ['📦', 'Behälter'], werkzeug: ['🔧', 'Werkzeug'], zugang: ['🚶', 'Zugang'],
+  tarnung: ['🎭', 'Tarnung'], muggel: ['👀', 'Muggel'], parken: ['🅿️', 'Parken / Start'], sonstiges: ['💡', 'Sonstiges'] };
+function isoDe(d) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${m[3]}.${m[2]}.${m[1]}` : ''; }
+/* Beleg: Zitat + Datum + Lognummer; antippen zeigt den ganzen Log */
+function beleg(x) {
+  const meta = [isoDe(x.datum), x.log_nr ? 'Log ' + x.log_nr : ''].filter(Boolean).join(' · ');
+  return `<q data-l="${x.log_nr || 0}">${esc(x.zitat || '')}${meta ? ` <small>(${esc(meta)})</small>` : ''}</q><div class="full" hidden></div>`;
+}
 function showAi() {
   const c = curCache(); if (!c) return toast('Kein Cache als Ziel');
   const a = S.ai.get(c.geocode);
-  const body = !a ? `<p>Noch nicht ausgewertet. Die Logs (${(c.logs || []).length}) gehen an dein KI-Skript (${esc(S.set.apiUrl)}).</p>` : `
-    <p class="ki">${esc(a.kurzfassung || '')}</p>
-    <p class="sub">Zustand: <b>${esc(a.zustand || '?')}</b>${a.letzter_fund ? ' · letzter Fund: ' + esc(a.letzter_fund) : ''}${a.dnf_serie ? ` · <b class="warn">${a.dnf_serie} DNF in Folge</b>` : ''}</p>
-    ${(a.versteck_hinweise || []).length ? '<h4>Hinweise zum Versteck</h4><ul class="list">' + a.versteck_hinweise.map(h => `<li class="ai"><b>${esc(h.hinweis)}</b><q>${esc(h.zitat)}</q></li>`).join('') + '</ul>' : ''}
-    ${(a.zones || []).length ? '<h4>Suchzonen</h4><ul class="list">' + a.zones.map((z, i) => `<li class="ai"><b>${esc(z.label)}</b>${z.sicherheit ? ` <small>(${esc(z.sicherheit)})</small>` : ''}<q>${esc(z.zitat)}</q>
-       ${z.unresolved ? '<small class="warn">Bezugspunkt nicht in OpenStreetMap gefunden</small>' : `<small>${z.anchorDist != null ? 'Bezugspunkt ' + z.anchorDist + ' m von den Listing-Koordinaten · ' : ''}Radius ${Math.round(z.r)} m</small> <button data-z="${i}">🎯 Als Ziel</button>`}</li>`).join('') + '</ul>' : ''}
-    <p class="sub">${esc(a.model || '')} · ${fmtDate(a.ts)} – Vorschläge, keine sicheren Koordinaten. Zitat prüfen.</p>`;
+  let body;
+  if (!a) body = `<p>Noch nicht ausgewertet. Die Logs (${(c.logs || []).length}) gehen an dein KI-Skript (${esc(S.set.apiUrl)}).</p>`;
+  else {
+    const z = ZUSTAND[a.zustand] || ZUSTAND.unklar;
+    const hilfe = (a.suchhilfe || []).concat((a.versteck_hinweise || []).map(h => ({ ...h, kategorie: 'versteck' })));
+    const gruppen = Object.keys(KAT).map(k => [k, hilfe.filter(h => (KAT[h.kategorie] ? h.kategorie : 'sonstiges') === k)]).filter(g => g[1].length);
+    body = `
+    <div class="zst"><span class="badge" style="background:${z[1]}">${z[0]}</span>
+      <span>${a.letzter_fund ? 'Fund ' + isoDe(a.letzter_fund) : 'kein Fund in den Logs'}${a.dnf_serie ? ` · <b class="warn">${a.dnf_serie} DNF in Folge</b>` : ''}${a.letzte_wartung ? ' · Wartung ' + isoDe(a.letzte_wartung) : ''}</span></div>
+    ${a.kurzfassung ? `<p class="ki">${esc(a.kurzfassung)}</p>` : ''}
+    ${(a.warnungen || []).length ? '<h4>⚠️ Achtung</h4><ul class="list">' + a.warnungen.map(w => `<li class="ai warnli"><b>${esc(w.hinweis)}</b>${beleg(w)}</li>`).join('') + '</ul>' : ''}
+    ${gruppen.length ? '<h4>Suchhilfe</h4><ul class="list">' + gruppen.map(([k, hs]) => hs.map(h => `<li class="ai"><span class="kat">${KAT[k][0]} ${KAT[k][1]}</span><b>${esc(h.hinweis)}</b>${beleg(h)}</li>`).join('')).join('') + '</ul>' : '<p class="sub">Keine konkreten Suchhinweise in den Logs.</p>'}
+    ${(a.zustand_details || []).length ? '<h4>Zustand</h4><ul class="list">' + a.zustand_details.map(d => `<li class="ai"><b>${esc(d.punkt)}</b>${beleg(d)}</li>`).join('') + '</ul>' : ''}
+    ${(a.stationen || []).length ? '<h4>Stationen</h4><ul class="list">' + a.stationen.map(st => `<li class="ai"><span class="kat">${esc(st.station)}</span><b>${esc(st.hinweis)}</b>${beleg(st)}</li>`).join('') + '</ul>' : ''}
+    ${(a.zones || []).length ? '<h4>Suchzonen</h4><ul class="list">' + a.zones.map((zo, i) => `<li class="ai"><b>${esc(zo.label)}</b>${zo.sicherheit ? ` <small>(${esc(zo.sicherheit)})</small>` : ''}<q>${esc(zo.zitat)}</q>
+       ${zo.unresolved ? '<small class="warn">Bezugspunkt nicht in OpenStreetMap gefunden</small>' : `<small>${zo.anchorDist != null ? 'Bezugspunkt ' + zo.anchorDist + ' m von den Listing-Koordinaten · ' : ''}Radius ${Math.round(zo.r)} m</small> <button data-z="${i}">🎯 Als Ziel</button>`}</li>`).join('') + '</ul>' : ''}
+    <p class="sub">${esc(a.model || '')} · ${fmtDate(a.ts)} – aus den Logs gezogen, Zitat antippen zeigt den ganzen Log.</p>`;
+  }
   openSheet(`KI · ${c.geocode}`, body + `<div class="tools"><button id="aGo">🤖 ${a ? 'Neu auswerten' : 'Logs auswerten'}</button></div>`, b => {
     b.querySelector('#aGo').onclick = () => run(async () => { toast('🤖 werte aus …', 30000); await aiAnalyze(c); toast('✅ fertig'); drawCacheMarkers(); showAi(); });
-    b.querySelectorAll('button[data-z]').forEach(bt => { bt.onclick = () => { const z = a.zones[+bt.dataset.z]; setTarget({ kind: 'zone', geocode: c.geocode, lat: z.lat, lon: z.lon, label: z.label, r: z.r, name: c.name }); }; });
+    b.querySelectorAll('button[data-z]').forEach(bt => { bt.onclick = () => { const zo = a.zones[+bt.dataset.z]; setTarget({ kind: 'zone', geocode: c.geocode, lat: zo.lat, lon: zo.lon, label: zo.label, r: zo.r, name: c.name }); }; });
+    b.querySelectorAll('q[data-l]').forEach(q => {
+      q.onclick = () => {
+        const n = +q.dataset.l, l = n > 0 ? (c.logs || [])[n - 1] : null, box = q.nextElementSibling;
+        if (!l || !box) return;
+        if (box.hidden) { const [ty] = logTypeInfo(l.type); box.innerHTML = `<div class="lh"><span class="lt">${esc(ty)}</span> ${fmtDate(l.date)} · ${esc(l.author)}</div><div class="lx">${esc(l.text)}</div>`; }
+        box.hidden = !box.hidden;
+      };
+    });
   });
 }
 

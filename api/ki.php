@@ -57,47 +57,66 @@ function build_prompt(array $c): string {
       clip((string)($l['author'] ?? ''), 40), clip((string)($l['text'] ?? ''), 800));
   }
   $hint = clip((string)($c['hint'] ?? ''), 400);
-  return "Du hilfst beim Geocaching vor Ort. Werte die Logs dieses Caches aus (neueste zuerst).\n\n"
+  return "Du hilfst einem Geocacher, der JETZT vor Ort sucht. Werte die Logs aus (neueste zuerst, [Nr] Datum | Typ | Autor: Text).\n"
+    . "Ziel: alles, was beim Finden hilft, und der aktuelle Zustand der Dose. Spoiler sind ausdrücklich erwünscht.\n\n"
     . 'Cache: ' . clip((string)$c['geocode'], 12) . ' – ' . clip((string)($c['name'] ?? ''), 120) . "\n"
-    . 'Typ: ' . clip((string)($c['type'] ?? ''), 20) . ' · D' . ($c['d'] ?? '?') . '/T' . ($c['t'] ?? '?') . ' · Größe: ' . clip((string)($c['size'] ?? ''), 20) . "\n"
+    . 'Typ: ' . clip((string)($c['type'] ?? ''), 20) . ' · D' . ($c['d'] ?? '?') . '/T' . ($c['t'] ?? '?') . ' · Größe laut Listing: ' . clip((string)($c['size'] ?? ''), 20) . "\n"
     . 'Hint: ' . ($hint !== '' ? $hint : '–') . "\n\nLogs:\n" . implode("\n", $lines) . "\n\n"
     . "Regeln:\n"
-    . "- Nur was in den Logs oder im Hint steht. Nichts erfinden. Jede Aussage mit wörtlichem Zitat (kurz) und Lognummer belegen.\n"
-    . "- kurzfassung: 1–3 Sätze auf Deutsch: Wo und wie ist der Cache versteckt (ohne Spoiler über den Hint hinaus, wenn es keine gibt), Zustand, Besonderheiten (Muggel, Zecken, Brennnesseln, Taschenlampe nötig).\n"
-    . "- zustand: einer von gut, wartung_noetig, vermutlich_weg, unklar.\n"
-    . "- dnf_serie: Anzahl 'Nicht gefunden' seit dem letzten Fund. letzter_fund: Datum JJJJ-MM-TT oder leer.\n"
+    . "- Nur Konkretes aus Logs und Hint. Keine Allgemeinplätze wie 'schöner Cache', 'Danke', 'gut versteckt', 'Owner hat sich Mühe gegeben', keine Fundstatistik als Text.\n"
+    . "- Nichts erfinden. Jeder Punkt mit kurzem wörtlichem Zitat, Lognummer und Datum des Logs (JJJJ-MM-TT).\n"
+    . "- Neuere Logs haben Vorrang. Widerspricht ein alter Log einem neuen (z. B. Dose ersetzt, Versteck geändert), nimm den neuen und erwähne das alte nur, wenn es hilft.\n"
+    . "- kurzfassung: 1–2 Sätze, nur das Wichtigste für die Suche jetzt (wo/wie versteckt, Zustand, Warnung). Kein Füllsatz.\n"
+    . "- suchhilfe: jeder brauchbare Hinweis einzeln, möglichst wörtlich konkret. kategorie:\n"
+    . "  versteck (wo genau: Höhe, Seite, unter/in/hinter was), behaelter (Art und Größe: Petling, Filmdose, magnetisch, Nano, Attrappe),\n"
+    . "  werkzeug (Pinzette, Stift, Taschenlampe, UV-Lampe, Magnet, Handschuhe), zugang (Weg dorthin, Zaun, Hang, Gebüsch, nasse Füße),\n"
+    . "  tarnung (wie getarnt, wonach aussehen), muggel (belebt, Tageszeit, Anwohner, Kameras), parken (Parkplatz, Startpunkt), sonstiges.\n"
+    . "- zustand_details: konkrete Zustandsangaben mit Datum: Logbuch voll/nass/fehlt, Dose beschädigt/undicht/offen, Deckel, Stift fehlt,\n"
+    . "  Ersatzdose gelegt, Owner-Wartung, Reviewer-Notiz, deaktiviert. letzte_wartung: Datum der letzten Owner-Wartung oder leer.\n"
+    . "- zustand: gut, wartung_noetig, vermutlich_weg (mehrere DNF in Folge bei erfahrenen Findern o. ä.) oder unklar.\n"
+    . "- dnf_serie: Anzahl 'Nicht gefunden' seit dem letzten Fund. letzter_fund: JJJJ-MM-TT oder leer.\n"
+    . "- warnungen: Zecken, Brennnesseln, Dornen, Baustelle, Privatgelände, Hund, Jäger/Hochsitz, Verkehr, gesperrt, nachts nicht, Koordinaten daneben.\n"
+    . "- stationen: nur bei Multi/Mystery/Wherigo: Hinweise zu Stationen oder Rätsel aus den Logs (z. B. 'Station 2: Schild hinter Hecke', 'Zahl ist schwer lesbar').\n"
+    . "  Keine fertigen Finalkoordinaten erfinden.\n"
     . "- koordinaten_korrektur: nur wenn Logs sagen, dass die Koordinaten daneben liegen (z. B. '10 m nördlich'). Sonst meter = 0.\n"
-    . "- positionen: Lagehinweise wie '8 m neben der Bushaltestelle', 'am dritten Baum hinter der Bank'.\n"
+    . "- positionen: Lagehinweise relativ zu Objekten wie '8 m neben der Bushaltestelle', 'am dritten Baum hinter der Bank'.\n"
     . "  anker = Bezugspunkt in Worten. osm_key/osm_value = passendes OpenStreetMap-Tag, z. B. highway=bus_stop, amenity=bench, amenity=waste_basket,\n"
     . "  highway=street_lamp, power=pole, natural=tree, leisure=playground, amenity=parking, highway=crossing, amenity=post_box,\n"
     . "  historic=wayside_cross, barrier=gate, man_made=bridge, bridge=yes, tourism=information, highway=traffic_signals.\n"
     . "  osm_value '*' = beliebiger Wert. Ist der Bezug die Listing-Koordinate oder gibt es kein Tag: osm_key und osm_value leer, anker 'Listing-Koordinaten'.\n"
     . "  abstand_m = 0 wenn unbekannt. richtung_grad = Himmelsrichtung in Grad (N=0, O=90, S=180, W=270), -1 wenn unbekannt oder nur 'links/rechts'.\n"
     . "  richtung_text = Richtung in Worten wie im Log. sicherheit: hoch, mittel oder niedrig.\n"
-    . "- Leere Listen sind erlaubt.";
+    . "- Leere Listen sind richtig, wenn die Logs nichts hergeben. Lieber nichts als Allgemeines.";
 }
 
 function schema(): array {
   $q = ['type' => 'string'];
+  $n = ['type' => 'integer'];
+  $sich = ['type' => 'string', 'enum' => ['hoch', 'mittel', 'niedrig']];
+  $beleg = fn(array $extra, array $req) => ['type' => 'array', 'items' => ['type' => 'object',
+    'properties' => $extra + ['datum' => $q, 'zitat' => $q, 'log_nr' => $n], 'required' => array_merge($req, ['zitat', 'log_nr'])]];
   return [
     'type' => 'object',
     'properties' => [
       'kurzfassung' => $q,
       'zustand' => ['type' => 'string', 'enum' => ['gut', 'wartung_noetig', 'vermutlich_weg', 'unklar']],
+      'zustand_details' => $beleg(['punkt' => $q], ['punkt']),
       'letzter_fund' => $q,
-      'dnf_serie' => ['type' => 'integer'],
-      'versteck_hinweise' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
-        'hinweis' => $q, 'zitat' => $q, 'log_nr' => ['type' => 'integer']], 'required' => ['hinweis', 'zitat', 'log_nr']]],
+      'letzte_wartung' => $q,
+      'dnf_serie' => $n,
+      'suchhilfe' => $beleg(['kategorie' => ['type' => 'string', 'enum' => ['versteck', 'behaelter', 'werkzeug', 'zugang', 'tarnung', 'muggel', 'parken', 'sonstiges']],
+        'hinweis' => $q], ['kategorie', 'hinweis']),
+      'warnungen' => $beleg(['hinweis' => $q], ['hinweis']),
+      'stationen' => $beleg(['station' => $q, 'hinweis' => $q], ['station', 'hinweis']),
       'koordinaten_korrektur' => ['type' => 'object', 'properties' => [
-        'meter' => ['type' => 'number'], 'richtung_grad' => ['type' => 'number'], 'zitat' => $q, 'log_nr' => ['type' => 'integer'],
-        'sicherheit' => ['type' => 'string', 'enum' => ['hoch', 'mittel', 'niedrig']]], 'required' => ['meter', 'richtung_grad', 'zitat', 'log_nr']],
+        'meter' => ['type' => 'number'], 'richtung_grad' => ['type' => 'number'], 'zitat' => $q, 'log_nr' => $n, 'sicherheit' => $sich],
+        'required' => ['meter', 'richtung_grad', 'zitat', 'log_nr']],
       'positionen' => ['type' => 'array', 'items' => ['type' => 'object', 'properties' => [
         'anker' => $q, 'osm_key' => $q, 'osm_value' => $q, 'abstand_m' => ['type' => 'number'], 'richtung_grad' => ['type' => 'number'],
-        'richtung_text' => $q, 'zitat' => $q, 'log_nr' => ['type' => 'integer'],
-        'sicherheit' => ['type' => 'string', 'enum' => ['hoch', 'mittel', 'niedrig']]],
+        'richtung_text' => $q, 'zitat' => $q, 'log_nr' => $n, 'sicherheit' => $sich],
         'required' => ['anker', 'osm_key', 'osm_value', 'abstand_m', 'richtung_grad', 'zitat', 'log_nr', 'sicherheit']]],
     ],
-    'required' => ['kurzfassung', 'zustand', 'dnf_serie', 'versteck_hinweise', 'positionen'],
+    'required' => ['kurzfassung', 'zustand', 'zustand_details', 'dnf_serie', 'suchhilfe', 'warnungen', 'positionen'],
   ];
 }
 
@@ -135,7 +154,7 @@ function call_anthropic(array $p, string $prompt): array {
   $model = $p['model'] ?? 'claude-haiku-5-5';
   $data = http_post($url, ['x-api-key: ' . ($p['key'] ?? ''), 'anthropic-version: 2023-06-01'], [
     'model' => $model,
-    'max_tokens' => 1500,
+    'max_tokens' => 3000,
     'tools' => [['name' => 'auswertung', 'description' => 'Strukturierte Auswertung der Cache-Logs', 'input_schema' => schema()]],
     'tool_choice' => ['type' => 'tool', 'name' => 'auswertung'],
     'messages' => [['role' => 'user', 'content' => $prompt]],
@@ -186,19 +205,37 @@ function normalize(array $r): array {
   $s = fn($v, $n = 600) => is_scalar($v) ? clip((string)$v, $n) : '';
   $f = fn($v, $d) => is_numeric($v) ? (float)$v : $d;
   $sich = fn($v) => in_array($v, ['hoch', 'mittel', 'niedrig'], true) ? $v : 'niedrig';
+  $datum = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}/', is_scalar($v) ? (string)$v : '', $m) ? $m[0] : '';
+  // Liste mit Belegen (Zitat, Lognummer, Datum); $felder = Pflicht-Textfelder
+  $liste = function ($v, array $felder, int $max, array $extra = []) use ($s, $f, $datum): array {
+    $out = [];
+    foreach (array_slice(is_array($v) ? $v : [], 0, $max) as $x) {
+      if (!is_array($x)) continue;
+      $e = [];
+      foreach ($felder as $k) { $e[$k] = $s($x[$k] ?? '', 300); }
+      if (implode('', $e) === '') continue;
+      foreach ($extra as $k => $erlaubt) $e[$k] = in_array($x[$k] ?? '', $erlaubt, true) ? $x[$k] : $erlaubt[count($erlaubt) - 1];
+      $e['datum'] = $datum($x['datum'] ?? '');
+      $e['zitat'] = $s($x['zitat'] ?? '', 300);
+      $e['log_nr'] = (int)$f($x['log_nr'] ?? 0, 0);
+      $out[] = $e;
+    }
+    return $out;
+  };
   $out = [
-    'kurzfassung' => $s($r['kurzfassung'] ?? '', 800),
+    'kurzfassung' => $s($r['kurzfassung'] ?? '', 600),
     'zustand' => in_array($r['zustand'] ?? '', ['gut', 'wartung_noetig', 'vermutlich_weg', 'unklar'], true) ? $r['zustand'] : 'unklar',
-    'letzter_fund' => $s($r['letzter_fund'] ?? '', 20),
+    'zustand_details' => $liste($r['zustand_details'] ?? null, ['punkt'], 10),
+    'letzter_fund' => $datum($r['letzter_fund'] ?? ''),
+    'letzte_wartung' => $datum($r['letzte_wartung'] ?? ''),
     'dnf_serie' => max(0, (int)$f($r['dnf_serie'] ?? 0, 0)),
-    'versteck_hinweise' => [],
+    'suchhilfe' => $liste($r['suchhilfe'] ?? ($r['versteck_hinweise'] ?? null), ['hinweis'], 14,
+      ['kategorie' => ['versteck', 'behaelter', 'werkzeug', 'zugang', 'tarnung', 'muggel', 'parken', 'sonstiges']]),
+    'warnungen' => $liste($r['warnungen'] ?? null, ['hinweis'], 8),
+    'stationen' => $liste($r['stationen'] ?? null, ['station', 'hinweis'], 12),
     'koordinaten_korrektur' => null,
     'positionen' => [],
   ];
-  foreach (array_slice(is_array($r['versteck_hinweise'] ?? null) ? $r['versteck_hinweise'] : [], 0, 8) as $h) {
-    if (!is_array($h) || $s($h['hinweis'] ?? '') === '') continue;
-    $out['versteck_hinweise'][] = ['hinweis' => $s($h['hinweis']), 'zitat' => $s($h['zitat'] ?? '', 300), 'log_nr' => (int)$f($h['log_nr'] ?? 0, 0)];
-  }
   $k = $r['koordinaten_korrektur'] ?? null;
   if (is_array($k) && $f($k['meter'] ?? 0, 0) > 0 && $f($k['meter'], 0) < 2000) {
     $out['koordinaten_korrektur'] = ['meter' => $f($k['meter'], 0), 'richtung_grad' => fmod($f($k['richtung_grad'] ?? -1, -1), 360),
