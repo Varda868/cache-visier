@@ -124,21 +124,23 @@ let sqlite; try { sqlite = require('node:sqlite'); } catch (e) { sqlite = null; 
 if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
   const db = new sqlite.DatabaseSync(':memory:');
   db.exec(`CREATE TABLE cg_caches(_id INTEGER PRIMARY KEY, updated LONG, detailed INTEGER, geocode TEXT UNIQUE, name TEXT, type TEXT, latitude DOUBLE, longitude DOUBLE,
-      difficulty FLOAT, terrain FLOAT, size TEXT, hint TEXT, owner TEXT, found INTEGER, disabled INTEGER, archived INTEGER, personal_note TEXT, coordsChanged INTEGER);
+      difficulty FLOAT, terrain FLOAT, size TEXT, hint TEXT, owner TEXT, found INTEGER, disabled INTEGER, archived INTEGER, personal_note TEXT, coordsChanged INTEGER, shortdesc TEXT, description TEXT);
     CREATE TABLE cg_logs(_id INTEGER PRIMARY KEY, geocode TEXT, updated LONG, service_log_id TEXT, type INTEGER, author TEXT, log TEXT, date LONG, found INTEGER, friend INTEGER);
     CREATE TABLE cg_waypoints(_id INTEGER PRIMARY KEY, geocode TEXT, updated LONG, type TEXT, prefix TEXT, lookup TEXT, name TEXT, latitude DOUBLE, longitude DOUBLE, note TEXT, own INTEGER);
     INSERT INTO cg_caches(geocode,name,type,latitude,longitude,difficulty,terrain,size,hint,owner,found,disabled,archived,personal_note,coordsChanged)
       VALUES('GC7FAX4','Testmulti','multi',48.3655,10.8712,2.5,1.5,'SMALL','Unter der Bank','Owner',0,0,0,'Notiz',1),
             ('GC12345','Ohne Koord','traditional',NULL,NULL,1,1,'MICRO','',' ',0,0,0,'',0);
+    UPDATE cg_caches SET shortdesc='Kurz', description='<p>Station 1: Zähle die Latten = A</p>' WHERE geocode='GC7FAX4';
     INSERT INTO cg_logs(geocode,type,author,log,date) VALUES('GC7FAX4',2,'A','alt gefunden',1700000000000),('GC7FAX4',3,'B','nicht gefunden',1760000000000),('GC7FAX4',2,'C','gefunden',1750000000000);
-    INSERT INTO cg_waypoints(geocode,type,prefix,name,latitude,longitude,note) VALUES('GC7FAX4','stage','S1','Station 1',48.366,10.872,'Zahl am Schild'),('GC7FAX4','final','FN','Final',NULL,NULL,'');`);
+    INSERT INTO cg_waypoints(geocode,type,prefix,name,latitude,longitude,note) VALUES('GC7FAX4','stage','S1','Station 1',48.366,10.872,'Zahl am Schild'),('GC7FAX4','final','FN','Final',NULL,NULL,''),('GC7FAX4','original','OR','Original',48.3650,10.8700,'');`);
   const exec = sql => { const st = db.prepare(sql); const cols = st.columns().map(c => c.name); const rows = st.all(); return rows.length || cols.length ? [{ columns: cols, values: rows.map(r => cols.map(c => r[c])) }] : []; };
   const list = A.importCgeo(exec, 40);
   assert.strictEqual(list.length, 1);
   const c = list[0];
   assert.strictEqual(c.type, 'multi'); assert.strictEqual(c.size, 'Small'); assert.strictEqual(c.d, 2.5); assert.ok(c.corrected);
   assert.strictEqual(c.logs.length, 3); assert.strictEqual(c.logs[0].author, 'B'); assert.strictEqual(A.dnfStreak(c.logs), 1);
-  assert.strictEqual(c.wpts.length, 1); assert.strictEqual(c.wpts[0].prefix, 'S1');
+  assert.strictEqual(c.wpts.length, 2); assert.strictEqual(c.wpts[0].prefix, 'S1'); assert.strictEqual(c.wpts[1].lat, null); // Final ohne Koordinaten bleibt
+  near(c.orig.lat, 48.3650, 1e-9); assert.ok(c.desc.includes('Zähle die Latten'));
 });
 else console.log('– node:sqlite fehlt, c:geo-Test übersprungen');
 
