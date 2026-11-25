@@ -46,6 +46,24 @@ function fmtDate(ms) {
   const d = new Date(ms);
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
 }
+/* HTML aus c:geo-Logs/Listings in lesbaren Text: Absätze und <br> als Zeilenumbruch, Tags weg, Entities aufgelöst */
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', auml: 'ä', ouml: 'ö', uuml: 'ü', Auml: 'Ä', Ouml: 'Ö', Uuml: 'Ü',
+  szlig: 'ß', euro: '€', hellip: '…', ndash: '–', mdash: '—', bdquo: '„', ldquo: '“', rdquo: '”', sbquo: '‚', lsquo: '‘', rsquo: '’',
+  laquo: '«', raquo: '»', deg: '°', copy: '©', eacute: 'é', egrave: 'è', agrave: 'à', ccedil: 'ç' };
+function htmlText(s) {
+  s = String(s == null ? '' : s);
+  const tags = /<\/?[a-z][^>]*>/i.test(s);
+  if (!tags && !/&(#x?[0-9a-f]+|[a-z]+);/i.test(s)) return s;
+  if (tags) {
+    s = s.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<\s*br\s*\/?>/gi, '\n').replace(/<\/\s*(p|div|li|h[1-6]|tr|blockquote)\s*>/gi, '\n').replace(/<\s*li[^>]*>/gi, '• ')
+      .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '$1').replace(/<\/?[a-z][^>]*>/gi, '');
+  }
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => e[0] === '#'
+      ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10))
+      : (ENT[e] != null ? ENT[e] : m))
+    .replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function num(v) { if (v == null || v === '') return null; const n = +v; return isFinite(n) && n > 0 ? n : null; }
 function toMs(v) {
@@ -199,7 +217,7 @@ function importCgeo(exec, maxLogs) {
     if (!o.geocode || o.latitude == null || o.longitude == null) continue;
     caches.set(o.geocode, {
       geocode: o.geocode, name: o.name || o.geocode, type: normType(o.type), lat: +o.latitude, lon: +o.longitude,
-      d: num(o.difficulty), t: num(o.terrain), size: normSize(o.size), hint: o.hint || '', owner: o.owner || '',
+      d: num(o.difficulty), t: num(o.terrain), size: normSize(o.size), hint: htmlText(o.hint || ''), owner: o.owner || '',
       found: !!o.found, disabled: !!o.disabled, archived: !!o.archived, note: o.personal_note || '', corrected: !!o.coordsChanged,
       desc: [o.shortdesc, o.description].filter(Boolean).join('\n\n'), logs: [], wpts: [], src: 'cgeo'
     });
@@ -212,7 +230,7 @@ function importCgeo(exec, maxLogs) {
       for (const row of r.values) {
         const o = {}; r.columns.forEach((c, i) => { o[c] = row[i]; });
         const c = caches.get(o.geocode); if (!c || c.logs.length >= maxLogs) continue;
-        c.logs.push({ date: toMs(o.date), type: o.type, author: o.author || '', text: o.log || '' });
+        c.logs.push({ date: toMs(o.date), type: o.type, author: o.author || '', text: htmlText(o.log || '') });
       }
     }
   }
@@ -515,7 +533,7 @@ function parseGpx(text, maxLogs) {
       const logs = [];
       for (const l of kids(kid(gc, 'logs'), 'log')) {
         if (logs.length >= maxLogs) break;
-        logs.push({ date: toMs(txt(l, 'date')), type: txt(l, 'type'), author: txt(l, 'finder'), text: txt(l, 'text') });
+        logs.push({ date: toMs(txt(l, 'date')), type: txt(l, 'type'), author: txt(l, 'finder'), text: htmlText(txt(l, 'text')) });
       }
       logs.sort((a, b) => (b.date || 0) - (a.date || 0));
       caches.set(code, {
@@ -1024,9 +1042,9 @@ function showInfo() {
     <p class="sub">${esc(c.geocode)} · ${(TYPE_INFO[c.type] || TYPE_INFO.other)[0]} · D${c.d || '?'}/T${c.t || '?'} ${c.size ? '· ' + esc(c.size) : ''} ${c.owner ? '· von ' + esc(c.owner) : ''}</p>
     <p class="coord">${fmtCoord(c.lat, c.lon)}${c.corrected ? ' (korrigiert)' : ''}</p>
     <h4>Hint</h4>
-    <div id="hint" class="hint blur">${esc(c.hint || '– kein Hint –')}</div>
+    <div id="hint" class="hint blur">${esc(htmlText(c.hint) || '– kein Hint –')}</div>
     <div class="tools"><button id="hShow">👁 Anzeigen</button><button id="hRot">🔤 ROT13</button><button id="hCache">🎯 Cache als Ziel</button></div>
-    ${c.note ? `<h4>Persönliche Notiz</h4><div class="hint">${esc(c.note)}</div>` : ''}
+    ${c.note ? `<h4>Persönliche Notiz</h4><div class="hint">${esc(htmlText(c.note))}</div>` : ''}
     ${wp ? `<h4>Wegpunkte</h4><ul class="list">${wp}</ul>` : ''}
     <div class="tools"><button id="hMulti">🧩 Stationen</button><button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
     b.querySelector('#hMulti').onclick = () => run(() => showMulti(c));
@@ -1044,7 +1062,7 @@ function openExternal(code) { window.open(/^OC/i.test(code) ? 'https://www.openc
 function showLogs() {
   const c = curCache(); if (!c) return toast('Kein Cache als Ziel');
   const lf = lastFound(c.logs), streak = dnfStreak(c.logs);
-  const items = (c.logs || []).map(l => { const [n, k] = logTypeInfo(l.type); return `<li class="log ${k}"><div class="lh"><span class="lt">${esc(n)}</span> ${fmtDate(l.date)} · ${esc(l.author)}</div><div class="lx">${esc(l.text)}</div></li>`; }).join('');
+  const items = (c.logs || []).map(l => { const [n, k] = logTypeInfo(l.type); return `<li class="log ${k}"><div class="lh"><span class="lt">${esc(n)}</span> ${fmtDate(l.date)} · ${esc(l.author)}</div><div class="lx">${esc(htmlText(l.text))}</div></li>`; }).join('');
   openSheet(`Logs · ${c.geocode}`, `
     <p class="sub">${(c.logs || []).length} Logs · letzter Fund: ${lf ? fmtDate(lf) : '–'}${streak ? ` · <b class="warn">${streak} DNF in Folge</b>` : ''}</p>
     <ul class="logs">${items || '<li class="empty">Keine Logs gespeichert. In c:geo den Cache mit Logs offline speichern.</li>'}</ul>`);
@@ -1093,8 +1111,8 @@ async function kiCall(body) {
 }
 async function aiAnalyze(c) {
   const body = {
-    geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], d: c.d, t: c.t, size: c.size, hint: c.hint, lat: c.lat, lon: c.lon,
-    logs: (c.logs || []).slice(0, 40).map(l => ({ date: l.date ? new Date(l.date).toISOString().slice(0, 10) : '', type: logTypeInfo(l.type)[0], author: l.author, text: String(l.text || '').slice(0, 900) }))
+    geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], d: c.d, t: c.t, size: c.size, hint: htmlText(c.hint), lat: c.lat, lon: c.lon,
+    logs: (c.logs || []).slice(0, 40).map(l => ({ date: l.date ? new Date(l.date).toISOString().slice(0, 10) : '', type: logTypeInfo(l.type)[0], author: l.author, text: htmlText(l.text).slice(0, 900) }))
   };
   const j = await kiCall(body);
   const res = j.result || {}; res.ts = Date.now(); res.model = j.model || '';
@@ -1154,7 +1172,7 @@ function showAi() {
       q.onclick = () => {
         const n = +q.dataset.l, l = n > 0 ? (c.logs || [])[n - 1] : null, box = q.nextElementSibling;
         if (!l || !box) return;
-        if (box.hidden) { const [ty] = logTypeInfo(l.type); box.innerHTML = `<div class="lh"><span class="lt">${esc(ty)}</span> ${fmtDate(l.date)} · ${esc(l.author)}</div><div class="lx">${esc(l.text)}</div>`; }
+        if (box.hidden) { const [ty] = logTypeInfo(l.type); box.innerHTML = `<div class="lh"><span class="lt">${esc(ty)}</span> ${fmtDate(l.date)} · ${esc(l.author)}</div><div class="lx">${esc(htmlText(l.text))}</div>`; }
         box.hidden = !box.hidden;
       };
     });
@@ -1180,13 +1198,13 @@ function multiState(c, m) {
   return { st, cur: st.findIndex(x => !x.done), fin: resolvePoint(m.final, vars, base, pts), base };
 }
 async function aiMulti(c) {
-  const desc = stripHtml(c.desc || '');
+  const desc = htmlText(c.desc || '');
   if (desc.length < 40 && !(c.wpts || []).length) throw new Error('Keine Beschreibung gespeichert. In c:geo den Cache mit Details speichern (oder GPX mit Beschreibung) und neu laden.');
   const base = listingBase(c);
   const j = await kiCall({
     aktion: 'multi', geocode: c.geocode, name: c.name, type: (TYPE_INFO[c.type] || TYPE_INFO.other)[0], start: fmtCoord(base.lat, base.lon),
     beschreibung: desc.slice(0, 16000),
-    wegpunkte: (c.wpts || []).map(w => ({ prefix: w.prefix, name: w.name, coord: w.lat != null ? fmtCoord(w.lat, w.lon) : '', note: stripHtml(w.note || '').slice(0, 400) }))
+    wegpunkte: (c.wpts || []).map(w => ({ prefix: w.prefix, name: w.name, coord: w.lat != null ? fmtCoord(w.lat, w.lon) : '', note: htmlText(w.note || '').slice(0, 400) }))
   });
   const old = await getMulti(c.geocode);
   const m = { geocode: c.geocode, ...j.result, model: j.model || '', ts: Date.now(), werte: old ? old.werte || {} : {}, erledigt: {}, foto: {} };
@@ -1269,7 +1287,7 @@ async function showMulti(c, focusNr) {
   c = c || curCache(); if (!c) return toast('Kein Cache als Ziel');
   const m = await getMulti(c.geocode);
   if (!m) {
-    const n = stripHtml(c.desc || '').length;
+    const n = htmlText(c.desc || '').length;
     openSheet(`🧩 Stationen · ${c.geocode}`, `<p>${n ? `Die Beschreibung (${n} Zeichen) und ${(c.wpts || []).length} Wegpunkte gehen an dein KI-Skript. Die KI zieht Stationen, Aufgaben, Variablen und die Finalformel heraus.` : 'Für diesen Cache ist keine Beschreibung gespeichert. In c:geo den Cache mit Details speichern oder GPX mit Beschreibung laden.'}</p>
       <div class="tools"><button id="mGo">🤖 Stationen aus dem Listing lesen</button></div>`, b => {
       b.querySelector('#mGo').onclick = () => run(async () => { toast('🤖 lese das Listing …', 60000); await aiMulti(c); toast('✅ Stationen gelesen'); renderStage(); showMulti(c); });
@@ -1504,5 +1522,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, htmlText, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

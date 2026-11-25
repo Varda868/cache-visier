@@ -89,6 +89,13 @@ t('Route: Position, Abstand, Punkt voraus', () => {
   assert.deepStrictEqual(A.routePointAt(pts, cum, 1e9), pts[2]); assert.deepStrictEqual(A.routePointAt(pts, cum, -5), pts[0]);
 });
 
+t('HTML aus Logs in Text', () => {
+  assert.strictEqual(A.htmlText('<p>Vielen Dank an <strong>SteinernerMann</strong>.</p> <p>TFTC #47853<br />Radler!</p>'), 'Vielen Dank an SteinernerMann.\nTFTC #47853\nRadler!');
+  assert.strictEqual(A.htmlText('Gr&uuml;&szlig;e &amp; &#8222;Dose&#x201C; <img src="x.gif" alt=":-)">'), 'Grüße & „Dose“ :-)');
+  assert.strictEqual(A.htmlText('3 < 5 und 7 > 2'), '3 < 5 und 7 > 2');
+  assert.strictEqual(A.htmlText('<ul><li>eins</li><li>zwei</li></ul>'), '• eins\n• zwei');
+});
+
 // Multi: Formeln und Koordinaten
 t('Ausdrücke rechnen', () => {
   assert.strictEqual(A.evalExpr('A*2+B', { A: 3, B: '4' }).value, 10);
