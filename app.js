@@ -417,6 +417,7 @@ function findBrightSpots(px, w, h, o) {
     }
     const bg = bn ? bs / bn : mean, contrast = mx - bg;
     if (contrast < (o.contrast || 70)) continue;
+    if (n < (o.minN || 2) && contrast < (o.strong || 130)) continue; // einzelnes helles Pixel: meist Rauschen, nur sehr kräftige zählen
     spots.push({ x: sx / n, y: sy / n, r: Math.max(1, Math.max(x1 - x0, y1 - y0) / 2), n, rgb: [sr / n, sg / n, sb / n], score: contrast * Math.sqrt(n) });
   }
   return mergeSpots(spots, o.merge == null ? Math.max(6, w * 0.035) : o.merge).sort((a, b) => b.score - a.score).slice(0, o.max || 8);
@@ -443,6 +444,54 @@ function colorName(rgb) {
   const hue = mx === r ? ((g - b) / (mx - mn) * 60 + 360) % 360 : mx === g ? (b - r) / (mx - mn) * 60 + 120 : (r - g) / (mx - mn) * 60 + 240;
   return hue < 20 || hue >= 330 ? 'rot' : hue < 45 ? 'orange' : hue < 70 ? 'gelb' : hue < 170 ? 'grün' : hue < 260 ? 'blau' : 'violett';
 }
+/* --- Reflektoren über mehrere Bilder verfolgen, damit die Anzeige ruhig bleibt ---
+   dets: Funde eines Bildes {fx, fy, fr, rgb, score, teile} (Lage relativ zur Bildbreite/-höhe).
+   Jeder Fund wird dem nächsten bekannten Reflektor zugeordnet (Fenster gate). Angezeigt wird ein Reflektor erst,
+   wenn er in 2 der letzten 3 Bilder da war, und er bleibt bis zu hold ms (Standard 0,8 s) stehen, wenn er kurz fehlt.
+   Lage und Größe laufen weich nach, die Farbe entscheidet eine abklingende Mehrheit (Wechsel erst bei klarem Vorsprung),
+   der hervorgehobene Reflektor wechselt nur, wenn ein anderer deutlich stärker ist. */
+function trackSpots(st, dets, now, o) {
+  o = o || {};
+  const gate = o.gate || 0.07, hold = o.hold || 800, a = o.alpha || 0.45, need = o.need || 2;
+  st = st || { tracks: [], next: 1, primary: null };
+  const tr = st.tracks, used = new Set();
+  for (const d of [...dets].sort((p, q) => q.score - p.score)) {
+    let best = null, bd = Infinity;
+    for (const t of tr) {
+      if (used.has(t)) continue;
+      const dist = Math.hypot(t.fx - d.fx, t.fy - d.fy);
+      const g = t.shown ? Math.max(gate, t.fr * 3) : Math.max(gate * 0.35, t.fr * 2); // neue Kandidaten nur bei fast gleicher Lage bestätigen (Rauschen)
+      if (dist < g && dist < bd) { bd = dist; best = t; }
+    }
+    const name = colorName(d.rgb);
+    if (best) {
+      used.add(best);
+      best.fx += a * (d.fx - best.fx); best.fy += a * (d.fy - best.fy); best.fr += 0.3 * (d.fr - best.fr);
+      best.score += 0.4 * (d.score - best.score); best.teile = d.teile || 1; best.last = now; best.hits.push(1); best.px = Math.max(best.px || 0, d.n || 2);
+      best.rgb = d.rgb;
+      for (const k in best.votes) best.votes[k] *= 0.8;
+      best.votes[name] = (best.votes[name] || 0) + 1;
+      const lead = Object.keys(best.votes).reduce((x, y) => (best.votes[y] > best.votes[x] ? y : x));
+      if (lead !== best.name && best.votes[lead] > 1.3 * (best.votes[best.name] || 0)) best.name = lead;
+    } else {
+      const t = { id: st.next++, fx: d.fx, fy: d.fy, fr: d.fr, score: d.score, teile: d.teile || 1, rgb: d.rgb, name, votes: { [name]: 1 }, hits: [1], last: now, shown: false, px: d.n || 2 };
+      tr.push(t); used.add(t);
+    }
+  }
+  for (const t of tr) if (!used.has(t)) t.hits.push(0);
+  for (const t of tr) {
+    if (t.hits.length > 3) t.hits.splice(0, t.hits.length - 3);
+    if (!t.shown && t.hits.reduce((x, y) => x + y, 0) >= (t.px < 2 ? 3 : need)) t.shown = true; // ein einzelnes Pixel muss 3 von 3 Bildern da sein
+  }
+  st.tracks = tr.filter(t => now - t.last <= hold && (t.shown || t.hits.some(Boolean)));
+  const vis = st.tracks.filter(t => t.shown).sort((p, q) => q.score - p.score).slice(0, o.max || 8);
+  const cur = vis.find(t => t.id === st.primary);
+  if (vis.length && (!cur || vis[0].score > 1.5 * cur.score)) st.primary = vis[0].id;
+  if (!vis.length) st.primary = null;
+  st.visible = vis.map(t => ({ id: t.id, fx: t.fx, fy: t.fy, fr: t.fr, name: t.name, teile: t.teile, score: t.score, primary: t.id === st.primary }));
+  return st;
+}
+
 /* Ansagen: größte Stufe unterhalb der Entfernung */
 const ANN_STEPS = [2000, 1000, 500, 200, 100, 50, 20, 10];
 function annStepBelow(d) { return ANN_STEPS.find(x => x < d) == null ? null : ANN_STEPS.find(x => x < d); }
@@ -1661,7 +1710,7 @@ function announce(t, d, R) {
 function applyNight() {
   document.body.classList.toggle('night', !!S.set.night);
   $('#bNight').classList.toggle('on', !!S.set.night);
-  if (S.set.night) startSpotLoop(); else { S.spots = []; drawSpots(); }
+  if (S.set.night) startSpotLoop(); else { S.spots = []; S.spotTrack = null; drawSpots(); }
 }
 function toggleNight() {
   S.set.night = !S.set.night; saveSettings(); applyNight();
@@ -1673,12 +1722,15 @@ function startSpotLoop() {
   _spotTimer = setInterval(() => {
     if (!S.set.night) { clearInterval(_spotTimer); _spotTimer = null; return; }
     const v = $('#cam');
-    if (S.mode !== 'cam' || !S.stream || !v.videoWidth || document.hidden) { if (S.spots.length) { S.spots = []; drawSpots(); } return; }
+    if (S.mode !== 'cam' || !S.stream || !v.videoWidth || document.hidden) { S.spotTrack = null; if (S.spots.length) { S.spots = []; drawSpots(); } return; }
     const w = 320, h = Math.round(320 * v.videoHeight / v.videoWidth);
     _spotCv = _spotCv || document.createElement('canvas'); _spotCv.width = w; _spotCv.height = h;
     const g = _spotCv.getContext('2d', { willReadFrequently: true });
     g.drawImage(v, 0, 0, w, h);
-    S.spots = findBrightSpots(g.getImageData(0, 0, w, h).data, w, h).map(p => ({ ...p, fx: p.x / w, fy: p.y / h, fr: p.r / w }));
+    const dets = findBrightSpots(g.getImageData(0, 0, w, h).data, w, h).map(p => ({ ...p, fx: p.x / w, fy: p.y / h, fr: p.r / w }));
+    S.spotRaw = dets.length; // für Diagnose und Test: Funde im Einzelbild
+    S.spotTrack = trackSpots(S.spotTrack, dets, Date.now());
+    S.spots = S.spotTrack.visible;
     drawSpots();
   }, 220);
 }
@@ -1693,10 +1745,10 @@ function drawSpots() {
   const FARBE = { 'weiß': '#ffffff', rot: '#ff3b30', orange: '#ff9500', gelb: '#ffd60a', 'grün': '#30d158', blau: '#0a84ff', violett: '#bf5af2' };
   S.spots.forEach((p, i) => {
     const x = ox + p.fx * v.videoWidth * k, y = oy + p.fy * v.videoHeight * k, r = Math.max(16, p.fr * v.videoWidth * k * 2.5);
-    const name = colorName(p.rgb), col = FARBE[name] || '#ffffff';
+    const name = p.name || colorName(p.rgb), col = FARBE[name] || '#ffffff';
     S.spotScreen.push({ x, y, r, name });
     g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.75)'; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();   // dunkler Rand für Kontrast
-    g.lineWidth = i === 0 ? 4 : 3; g.strokeStyle = col; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = (p.primary ?? i === 0) ? 4 : 3; g.strokeStyle = col; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
     const label = name + (p.teile > 1 ? ` (${p.teile})` : '');
     g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,.8)'; g.strokeText(label, x, y - r - 6);
     g.fillStyle = col; g.fillText(label, x, y - r - 6);
@@ -2429,5 +2481,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, screenRay, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, GEAR_HARD, findBrightSpots, mergeSpots, colorName, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, screenRay, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, GEAR_HARD, findBrightSpots, mergeSpots, colorName, trackSpots, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };

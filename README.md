@@ -123,6 +123,7 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
   - Im Kamerabild sucht die App kleine, sehr helle Flecken vor dunklem Grund (Reflektoren/Firetacks), markiert sie mit Ringen in ihrer echten Farbe (weiß, grün, rot, blau …) und nennt die Farbe. Das läuft auf dem Handy, ohne KI und ohne Netz. Am besten mit 🔦 Lampe an.
   - Die Ringe liegen über dem roten Schleier, damit die Farbe erkennbar bleibt.
   - Große helle Flächen wie Laternen werden ignoriert. Dicht beieinanderliegende Flecken zählen als ein Reflektor, mit Anzahl in Klammern.
+  - **Ruhige Anzeige:** Die App verfolgt jeden Reflektor über mehrere Bilder. Ein Ring erscheint erst, wenn der Fleck in 2 von 3 Bildern (einzelnes Pixel: 3 von 3) an fast derselben Stelle war, und bleibt 0,8 s stehen, wenn er kurz fehlt. Lage und Größe laufen weich nach, die Farbe wechselt erst bei klarer Mehrheit, der hervorgehobene Ring nur bei einem deutlich stärkeren Reflektor. Im Test mit Zittern, Flackern und Pixelrauschen: 2 statt 12 Wechsel der Anzahl in 4 s, Rauschen ohne Ring.
   - **Reflektor antippen:** Die Richtung vom Standort zum Reflektor kommt als Peilung ins 📐-Blatt (Entfernung selbst eintragen oder schätzen). Auf der Karte erscheint ein weißer Peilstrahl (300 m), löschbar im 📐-Blatt.
 - **Ansagen und Vibration:**
   - Abstände zum Ziel bei 2 km, 1 km, 500, 200, 100, 50, 20 und 10 m, mit Route über den Restweg gerechnet.

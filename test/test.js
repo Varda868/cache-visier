@@ -125,6 +125,36 @@ t('Reflektoren finden, große Lichtflächen ignorieren', () => {
   assert.strictEqual(gr.length, 1); assert.strictEqual(gr[0].teile, 2); near(gr[0].x, 62.5, 0.01);
   assert.strictEqual(A.colorName([255, 255, 250]), 'weiß'); assert.strictEqual(A.colorName([230, 40, 30]), 'rot'); assert.strictEqual(A.colorName([40, 220, 60]), 'grün');
 });
+t('Reflektoren verfolgen: ruhig statt nervös', () => {
+  const W = [255, 255, 250], Y = [255, 230, 60];
+  const d = (fx, fy, rgb = W, score = 500) => ({ fx, fy, fr: 0.01, rgb, score, teile: 1 });
+  let st = null, t = 0;
+  // einmaliger Lichtpunkt (Rauschen) erscheint nicht
+  st = A.trackSpots(st, [d(0.8, 0.8)], t += 220); assert.strictEqual(st.visible.length, 0);
+  st = A.trackSpots(st, [], t += 220); st = A.trackSpots(st, [], t += 220); st = A.trackSpots(st, [], t += 220);
+  assert.strictEqual(st.tracks.length, 0);
+  // echter Reflektor mit Handzittern: ab dem 2. Bild sichtbar, dieselbe Kennung, Lage geglättet
+  const jit = [[0.50, 0.40], [0.52, 0.41], [0.49, 0.39], [0.51, 0.40]], ids = new Set(), xs = [];
+  for (const [x, y] of jit) { st = A.trackSpots(st, [d(x, y)], t += 220); st.visible.forEach(v => { ids.add(v.id); xs.push(v.fx); }); }
+  assert.strictEqual(ids.size, 1); assert.ok(xs.every(x => x > 0.495 && x < 0.515), 'Lage springt nicht mit');
+  // kurz weg (bis 0,8 s): bleibt stehen, danach verschwindet er
+  st = A.trackSpots(st, [], t += 220); assert.strictEqual(st.visible.length, 1);
+  st = A.trackSpots(st, [], t += 220); assert.strictEqual(st.visible.length, 1);
+  st = A.trackSpots(st, [], t += 600); assert.strictEqual(st.visible.length, 0);
+  // Farbe: ein einzelnes gelbliches Bild ändert „weiß“ nicht, anhaltend gelb schon
+  st = null; for (let i = 0; i < 4; i++) st = A.trackSpots(st, [d(0.3, 0.3)], t += 220);
+  st = A.trackSpots(st, [d(0.3, 0.3, Y)], t += 220); assert.strictEqual(st.visible[0].name, 'weiß');
+  for (let i = 0; i < 4; i++) st = A.trackSpots(st, [d(0.3, 0.3, Y)], t += 220);
+  assert.strictEqual(st.visible[0].name, 'gelb');
+  // Hervorhebung wechselt nur bei deutlich stärkerem Reflektor
+  st = null; for (let i = 0; i < 3; i++) st = A.trackSpots(st, [d(0.2, 0.2, W, 500), d(0.7, 0.7, W, 560)], t += 220);
+  const p1 = st.visible.find(v => v.primary).id;
+  for (let i = 0; i < 3; i++) st = A.trackSpots(st, [d(0.2, 0.2, W, 560), d(0.7, 0.7, W, 500)], t += 220);
+  assert.strictEqual(st.visible.find(v => v.primary).id, p1);
+  assert.ok(st.visible.find(v => v.id === p1).fx > 0.5, 'leicht schwächer geworden: Hervorhebung bleibt');
+  for (let i = 0; i < 6; i++) st = A.trackSpots(st, [d(0.2, 0.2, W, 1200), d(0.7, 0.7, W, 400)], t += 220);
+  assert.ok(st.visible.find(v => v.primary).fx < 0.5, 'deutlich stärkerer Reflektor wird hervorgehoben');
+});
 t('Ansage-Stufen', () => {
   assert.strictEqual(A.annStepBelow(730), 500); assert.strictEqual(A.annStepBelow(100), 50); assert.strictEqual(A.annStepBelow(9), null); assert.strictEqual(A.annStepBelow(5000), 2000);
 });
