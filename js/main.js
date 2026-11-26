@@ -38,6 +38,8 @@ import './ui/warnungen.js';
 import './ui/ziel-routing.js';
 import './ui/zonen-ar.js';
 import './ui/team.js';
+import './ui/qr.js';
+import './ui/nfc.js';
 
 /* ---------- Start ---------- */
 async function start() {

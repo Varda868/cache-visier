@@ -303,3 +303,14 @@ body[data-mode=map] #zonen { display: none; }
 #teamBar button { padding: 5px 9px; }
 .teamLbl { color: #cfe0ff; font: 700 12px system-ui; text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; transform: translate(-50%, -50%); }
 .teamLbl.mein { color: #ffdc00; }
+
+/* QR / NFC */
+#qrBox { position: absolute; border: 3px solid #ffdc00; border-radius: 8px; box-shadow: 0 0 0 2px rgba(0,0,0,.6); pointer-events: none; }
+#qrBox[hidden] { display: none; }
+#codeCard { position: fixed; left: 10px; right: 10px; top: calc(var(--st) + 66px); z-index: 710; padding: 12px 14px; border-radius: 14px;
+  background: rgba(11, 15, 20, .95); border: 2px solid #ffdc00; box-shadow: 0 6px 24px rgba(0,0,0,.6); animation: arIn .3s ease; }
+#codeCard[hidden] { display: none; }
+#codeCard .cc-h { font-size: 14px; color: var(--mut); }
+#codeCard .cc-t { font-size: 17px; margin: 6px 0; word-break: break-word; }
+#codeCard .cc-s { font-size: 13px; color: var(--mut); word-break: break-word; }
+#codeCard .cc-b { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }

@@ -5,6 +5,7 @@ import { $, S, openSheet, run, toast } from './basis.js';
 import { showDiag, showSettings } from './einstellungen.js';
 import { showChecker } from './checker.js';
 import { showHilfe } from './hilfe.js';
+import { nfcMoeglich, showNfc } from './nfc.js';
 import { showSicherung } from './sicherung.js';
 import { loadNewestBackup, loadOcNearby, pickFile, stripHtml } from './import.js';
 import { aiAll, showAi } from './ki-auswertung.js';
@@ -31,7 +32,7 @@ function showList(filter = '') {
     <div class="tools">
       <button id="lFolder">📁 c:geo-Backup laden</button><button id="lFile">📄 Datei wählen</button><button id="lOc">🟢 OC in der Nähe</button>
       <button id="lTour">🗺️ Tour</button><button id="lSet">⚙️ Einstellungen</button><button id="lHelp">❓ Hilfe</button><button id="lMore" aria-expanded="${S.moreOpen ? 'true' : 'false'}">${S.moreOpen ? '▴ Weniger' : '⋯ Mehr'}</button>
-      <span id="lMoreBox" ${S.moreOpen ? '' : 'hidden'}><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button><button id="lBackup">💾 Sicherung</button><button id="lDiag">🩺 Diagnose</button></span>
+      <span id="lMoreBox" ${S.moreOpen ? '' : 'hidden'}><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button><button id="lBackup">💾 Sicherung</button><button id="lDiag">🩺 Diagnose</button>${nfcMoeglich() ? '<button id="lNfc">📶 NFC</button>' : ''}</span>
     </div>
     <input id="lFilter" type="search" placeholder="Suchen (Name oder Code)" value="${esc(filter)}">
     <ul class="list">${rows || '<li class="empty">Noch keine Caches. In c:geo Caches offline speichern und ein Backup machen, dann „c:geo-Backup laden“.</li>'}</ul>`, b => {
@@ -44,6 +45,7 @@ function showList(filter = '') {
     b.querySelector('#lAi').onclick = () => run(aiAll);
     b.querySelector('#lSet').onclick = showSettings;
     b.querySelector('#lDiag').onclick = showDiag;
+    if (b.querySelector('#lNfc')) b.querySelector('#lNfc').onclick = showNfc;
     b.querySelector('#lHelp').onclick = () => showHilfe();
     b.querySelector('#lBackup').onclick = () => run(showSicherung);
     b.querySelector('#lMore').onclick = e => { S.moreOpen = !S.moreOpen; b.querySelector('#lMoreBox').hidden = !S.moreOpen; e.target.textContent = S.moreOpen ? '▴ Weniger' : '⋯ Mehr'; e.target.setAttribute('aria-expanded', String(S.moreOpen)); };

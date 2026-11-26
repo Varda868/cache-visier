@@ -96,6 +96,8 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 - **Ablauf:** Die App schickt Hint und bis zu 40 Logs (je 900 Zeichen) an `ki.php`. Zurück kommen eine Kurzfassung, der Zustand, die DNF-Serie, Versteckhinweise mit Zitat und Lagehinweise („8 m neben der Bushaltestelle“).
 - **Suchzonen:** Die App sucht den Bezugspunkt in OpenStreetMap im Umkreis von 170 m um die Listing-Koordinaten und zeichnet daraus eine Suchzone. Jede Zone lässt sich als Ziel setzen.
 - **Suchzonen im Kamerabild** (`ui/zonen-ar.js`): Zonen im Umkreis von 150 m liegen als Ringe auf dem Boden – Kreispunkte am Boden (Handyhöhe tiefer) einzeln projiziert, dadurch perspektivisch als Ellipse. Farbe nach Sicherheit, Bezugsobjekt als 📍-Nadel. Abschaltbar (⚙️).
+- **QR-Codes** (`ui/qr.js`): Das Kamerabild wird alle 0,7 s mit dem `BarcodeDetector` des Browsers geprüft (Chrome/Android; Safari hat ihn nicht). Fundkarte mit Koordinate → Ziel, Link erst nach Tipp (Domain sichtbar), Kopieren. Abschaltbar.
+- **NFC** (`ui/nfc.js`, Web NFC, nur Chrome/Android mit NFC): Anhänger lesen (Text, URL, Koordinaten → dieselbe Fundkarte) und beschreiben. Menüpunkt erscheint nur, wenn der Browser NFC kann.
 - Das sind Vorschläge, keine Koordinaten. Das Zitat zeigt, worauf sie beruhen.
 
 ## Multi-Stationen und Foto → KI
