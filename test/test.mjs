@@ -201,6 +201,16 @@ t('Sicherung: Schlüssel nur auf Wunsch, Zusammenführen, keine doppelten Logs',
   assert.throws(() => A.pruefeSicherung({ app: 'X' }), /Keine CacheVisier-Sicherung/);
   assert.strictEqual(A.pruefeSicherung({ app: 'CacheVisier', format: 1, meta: [['a', 1]] }).meta.length, 1);
 });
+t('Checker im Listing finden, Koordinate im passenden Format', () => {
+  const desc = '<p>Prüfen: <a href="https://www.geochecker.com/index.php?code=abc&amp;action=check&amp;wp=4743">hier</a> oder https://www.certitudes.org/certitude?wp=GC7GD1K. Bild: https://img.example.com/x.jpg</p><a href="https://geocheck.org/geo_inputchkcoord.php?gid=123">GeoCheck</a>';
+  const k = A.findCheckers(desc);
+  assert.deepStrictEqual(k.map(x => x.name), ['GeoChecker', 'Certitude', 'GeoCheck']);
+  assert.strictEqual(k[0].url, 'https://www.geochecker.com/index.php?code=abc&action=check&wp=4743');
+  assert.strictEqual(k[1].captcha, true); assert.strictEqual(k[0].format, 'kompakt');
+  assert.strictEqual(A.checkerCoord(48.42338, 10.88547, 'kompakt'), 'N48 25.403 E010 53.128');
+  assert.strictEqual(A.checkerCoord(48.42338, 10.88547, 'normal'), 'N 48° 25.403 E 010° 53.128');
+  assert.deepStrictEqual(A.findCheckers('kein Link'), []);
+});
 t('Ansage-Stufen', () => {
   assert.strictEqual(A.annStepBelow(730), 500); assert.strictEqual(A.annStepBelow(100), 50); assert.strictEqual(A.annStepBelow(9), null); assert.strictEqual(A.annStepBelow(5000), 2000);
 });

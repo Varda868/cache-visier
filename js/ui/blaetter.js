@@ -3,11 +3,12 @@ import { TYPE_INFO, dnfStreak, lastFound, logTypeInfo } from '../kern/caches.js'
 import { bearing, compassName, esc, fmtCoord, fmtDate, fmtDist, haversine, htmlText, rot13 } from '../kern/geo.js';
 import { $, S, openSheet, run, toast } from './basis.js';
 import { showDiag, showSettings } from './einstellungen.js';
+import { showChecker } from './checker.js';
 import { showHilfe } from './hilfe.js';
 import { showSicherung } from './sicherung.js';
 import { loadNewestBackup, loadOcNearby, pickFile, stripHtml } from './import.js';
 import { aiAll, showAi } from './ki-auswertung.js';
-import { showMulti } from './multi.js';
+import { multiState, showMulti } from './multi.js';
 import { showOffline } from './offline.js';
 import { showPeilung } from './peilung.js';
 import { showTour } from './tour.js';
@@ -65,7 +66,9 @@ function infoSheet() {
     <div class="tools"><button id="hShow">👁 Anzeigen</button><button id="hRot">🔤 ROT13</button><button id="hCache">🎯 Cache als Ziel</button></div>
     ${c.note ? `<h4>Persönliche Notiz</h4><div class="hint">${esc(htmlText(c.note))}</div>` : ''}
     ${wp ? `<h4>Wegpunkte</h4><ul class="list">${wp}</ul>` : ''}
-    <div class="tools"><button id="hMulti">🧩 Stationen</button><button id="hPeil">📐 Peilung</button><button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
+    <div class="tools"><button id="hMulti">🧩 Stationen</button><button id="hPeil">📐 Peilung</button>${['mystery', 'multi', 'wherigo'].includes(c.type) ? '<button id="hChk">✔️ Checker</button>' : ''}<button id="hOpen">↗️ In c:geo / im Browser öffnen</button></div>`, b => {
+    const hc = b.querySelector('#hChk');
+    if (hc) hc.onclick = () => { const m = S.multi.get(c.geocode), f = m && m.stationen ? multiState(c, m).fin : null; if (f && f.lat != null) showChecker(c, f.lat, f.lon, 'Final berechnet'); else if (c.corrected) showChecker(c, c.lat, c.lon, 'korrigierte Koordinaten'); else showChecker(c, null, null); };
     b.querySelector('#hMulti').onclick = () => run(() => showMulti(c));
     b.querySelector('#hPeil').onclick = () => showPeilung();
     const h = b.querySelector('#hint');

@@ -173,4 +173,31 @@ function arrivalInfo(c, now) {
   return { dt: `D${num(c.d)} / T${num(c.t)}`, size, last, vorText: last ? vor(last.tage) : '', streak, lastFound: lf, sprache };
 }
 
-export { TYPE_INFO, normType, normSize, LOGTYPES, logTypeInfo, dnfStreak, lastFound, FN_TYPES, fieldNoteLine, utf16le, sniffFormat, importCgeo, nearestOsm, arrivalInfo };
+/* Checker-Links aus dem Listing (HTML oder Text): bekannte Dienste mit Namen, Captcha-Hinweis und passendem Koordinatenformat */
+const CHECKER = [
+  [/(^|\.)geochecker\.com$/i, 'GeoChecker', false, 'kompakt'],
+  [/(^|\.)geocheck\.org$/i, 'GeoCheck', true, 'normal'],
+  [/(^|\.)certitudes?\.org$/i, 'Certitude', true, 'normal'],
+  [/(^|\.)gc-apps\.com$/i, 'GC-Apps-Checker', false, 'normal'],
+  [/(^|\.)gcc\.eu$|(^|\.)geocachingtoolbox\.com$/i, 'Checker', false, 'normal'],
+];
+function findCheckers(desc) {
+  const out = [], seen = new Set();
+  const urls = String(desc || '').match(/https?:\/\/[^\s"'<>)]+/gi) || [];
+  for (let u of urls) {
+    u = u.replace(/&amp;/g, '&').replace(/[.,;]+$/, '');
+    let host; try { host = new URL(u).hostname; } catch (e) { continue; }
+    const k = CHECKER.find(c => c[0].test(host)) || (/check/i.test(host) ? [null, host.replace(/^www\./, ''), false, 'normal'] : null);
+    if (!k || seen.has(u)) continue;
+    seen.add(u); out.push({ name: k[1], url: u, captcha: k[2], format: k[3] });
+  }
+  return out.slice(0, 6);
+}
+/* Koordinate für den Checker: GeoChecker will „N48 22.123 E010 52.456“ (ohne Gradzeichen) */
+function checkerCoord(lat, lon, format) {
+  const f = (v, p, n, w) => { const h = v >= 0 ? p : n; v = Math.abs(v); let d = Math.floor(v), m = (v - d) * 60; if (m >= 59.9995) { d++; m = 0; }
+    return format === 'kompakt' ? `${h}${String(d).padStart(w, '0')} ${m.toFixed(3).padStart(6, '0')}` : `${h} ${String(d).padStart(w, '0')}° ${m.toFixed(3).padStart(6, '0')}`; };
+  return `${f(lat, 'N', 'S', 2)} ${f(lon, 'E', 'W', 3)}`;
+}
+
+export { TYPE_INFO, normType, normSize, LOGTYPES, logTypeInfo, dnfStreak, lastFound, FN_TYPES, fieldNoteLine, utf16le, sniffFormat, importCgeo, nearestOsm, arrivalInfo, findCheckers, checkerCoord };

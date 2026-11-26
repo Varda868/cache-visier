@@ -17,6 +17,7 @@ import './ui/ansagen.js';
 import './ui/anzeige.js';
 import './ui/basis.js';
 import './ui/blaetter.js';
+import './ui/checker.js';
 import './ui/einstellungen.js';
 import './ui/funk.js';
 import './ui/hilfe.js';

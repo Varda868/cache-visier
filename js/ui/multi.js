@@ -2,6 +2,7 @@ import { TYPE_INFO } from '../kern/caches.js';
 import { resolvePoint, stationVarsDone } from '../kern/formeln.js';
 import { esc, fmtCoord, fmtDate, fmtDist, haversine, htmlText } from '../kern/geo.js';
 import { start } from '../main.js';
+import { showChecker } from './checker.js';
 import { $, S, flash, idbGet, idbPut, openSheet, run, toast } from './basis.js';
 import { grabFrame, savePhoto, shrinkImage, startCamera } from './kamera.js';
 import { kiCall, kiZiel } from './ki-auswertung.js';
@@ -80,7 +81,7 @@ async function renderStage() {
       const f = ms.fin;
       html = `<div class="st-h" data-a="min"><b>🏁 Final</b><span>${ms.st.length} Stationen erledigt</span></div>
         <div class="st-t coord">${esc(f.lat != null ? fmtCoord(f.lat, f.lon) : (f.text || '–'))}${f.missing && f.missing.length ? ` <span class="warn">fehlt: ${f.missing.join(', ')}</span>` : ''}</div>
-        <div class="tools">${f.lat != null ? '<button data-a="fin">🎯 Final als Ziel</button>' : ''}<button data-a="open">✏️ Stationen</button></div>`;
+        <div class="tools">${f.lat != null ? '<button data-a="fin">🎯 Final als Ziel</button><button data-a="chk">✔️ Prüfen</button>' : ''}<button data-a="open">✏️ Stationen</button></div>`;
     } else {
       const x = ms.st[ms.cur], st = x.s, vars = m.werte || {};
       const vtxt = (st.variablen || []).map(v => `${esc(v.name)}=${vars[v.name] != null && vars[v.name] !== '' ? esc(vars[v.name]) : '?'}`).join(' ');
@@ -107,6 +108,7 @@ async function renderStage() {
         if (a === 'done') { mm.erledigt = mm.erledigt || {}; mm.erledigt[ms.st[i].s.nr] = true; saveMulti(mm); renderStage(); }
         if (a === 'go') { const x = ms.st[i]; setTarget({ kind: 'wpt', geocode: c.geocode, lat: x.r.lat, lon: x.r.lon, label: `S${x.s.nr} ${x.s.name}`, name: c.name }); }
         if (a === 'fin') setTarget({ kind: 'wpt', geocode: c.geocode, lat: ms.fin.lat, lon: ms.fin.lon, label: 'Final (berechnet)', name: c.name });
+        if (a === 'chk') showChecker(c, ms.fin.lat, ms.fin.lon, 'Final berechnet');
       });
     };
   });
@@ -141,7 +143,7 @@ async function showMulti(c, focusNr) {
     <div class="stn final"><div class="stn-h">🏁 <b>Final</b></div><div class="sub">${esc(m.final && (m.final.text || m.final.vorlage) || '')}</div>
       <div class="coord big">${esc(fin.lat != null ? fmtCoord(fin.lat, fin.lon) : fin.text || '–')}</div>${miss(fin)}
       ${dist != null ? `<small>${fmtDist(dist)} vom Start${dist > 3219 ? ' – <b class="warn">mehr als 2 Meilen, Werte prüfen</b>' : ''} · mit Logs/Checker prüfen</small>` : ''}
-      <div class="tools">${fin.lat != null ? '<button id="mFin">🎯 Final als Ziel</button>' : ''}</div></div>
+      <div class="tools">${fin.lat != null ? '<button id="mFin">🎯 Final als Ziel</button><button id="mChk">✔️ Prüfen</button>' : ''}</div></div>
     <p class="sub">${esc(m.model || '')} · ${fmtDate(m.ts)} – von der KI aus dem Listing gelesen, Formeln prüfen.</p>
     <div class="tools"><button id="mAsk">❓ Foto-Frage</button><button id="mRe">🤖 Neu lesen</button><button id="mClr">🗑 Werte löschen</button></div>`, b => {
     b.querySelector('#mAsk').onclick = () => showFotoFrage(c, {});
@@ -156,6 +158,7 @@ async function showMulti(c, focusNr) {
     b.querySelectorAll('[data-go]').forEach(bt => { bt.onclick = () => { const x = ms.st[+bt.dataset.go]; setTarget({ kind: 'wpt', geocode: c.geocode, lat: x.r.lat, lon: x.r.lon, label: `S${x.s.nr} ${x.s.name}`, name: c.name }); }; });
     b.querySelectorAll('[data-done]').forEach(bt => { bt.onclick = () => { m.erledigt = m.erledigt || {}; const k = bt.dataset.done; if (m.erledigt[k]) delete m.erledigt[k]; else m.erledigt[k] = true; saveMulti(m); redraw(); }; });
     const fb = b.querySelector('#mFin'); if (fb) fb.onclick = () => setTarget({ kind: 'wpt', geocode: c.geocode, lat: fin.lat, lon: fin.lon, label: 'Final (berechnet)', name: c.name });
+    const fc = b.querySelector('#mChk'); if (fc) fc.onclick = () => showChecker(c, fin.lat, fin.lon, 'Final berechnet');
     b.querySelector('#mRe').onclick = () => run(async () => { if (!confirm('Stationen neu aus dem Listing lesen? Eingetragene Werte bleiben.')) return; toast('🤖 lese das Listing …', 60000); await aiMulti(c); toast('✅ neu gelesen'); renderStage(); showMulti(c); });
     b.querySelector('#mClr').onclick = () => { if (!confirm('Alle eingetragenen Werte dieses Caches löschen?')) return; m.werte = {}; m.erledigt = {}; m.foto = {}; saveMulti(m); redraw(); };
     if (focusNr != null) { const el = b.querySelector('#stn' + focusNr); if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 50); }
