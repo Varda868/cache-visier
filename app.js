@@ -589,9 +589,10 @@ function routePointAt(pts, cum, s) {
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
 const $ = s => document.querySelector(s);
+const PAGES = /\.github\.io$/.test(location.hostname); // GitHub Pages: kein PHP – Routing direkt zu FOSSGIS, KI-Skript liegt woanders
 const DEFAULTS = {
   fovH: 50, phoneH: 1.4, compassOffset: 0, sensor: 'auto', autoMode: true, maxLogs: 40,
-  apiUrl: './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
+  apiUrl: PAGES ? '' : './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
   talkOn: false, talkName: '', talkPw: '', talkCache: true, talkLive: 'aus', talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
@@ -599,7 +600,7 @@ const DEFAULTS = {
   gear_special_tool: false, gear_water: false, gear_measure: false, gear_ladder: false, gear_pole: false, gear_wading: false,
   gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false, gear_boat: false, gear_scuba: false, gear_swimming: false,
   tourRadius: 2000, tourLoop: false,
-  routing: false, routeUrl: './api/route.php', routeCosting: 'pedestrian', lookahead: 25
+  routing: false, routeUrl: PAGES ? 'https://valhalla1.openstreetmap.de' : './api/route.php', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
   set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false,

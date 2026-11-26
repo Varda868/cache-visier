@@ -19,6 +19,16 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
 
 ## Einrichten
 
+### Direkt von GitHub (GitHub Pages)
+
+- Im Repo unter Settings → Pages: Source „Deploy from a branch“, Branch `main`, Ordner `/ (root)`. Die App läuft dann unter `https://varda868.github.io/cache-visier/`.
+- `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert ausliefert.
+- GitHub Pages kann kein PHP. Deshalb ist dort das Routing auf FOSSGIS direkt voreingestellt (gedrosselt, siehe unten), und die KI-Adresse ist leer.
+- Für die KI-Auswertung liegt `api/` (mit `config.php`) auf einem eigenen Webspace mit PHP. In den Einstellungen trägst du dann dessen volle Adresse ein, z. B. `https://…/api/ki.php`, und in `config.php` `ALLOWED_ORIGIN = 'https://varda868.github.io'`.
+- Daten wie Caches, Einstellungen und der b:con-Schlüssel hängen an der Adresse. Unter github.io fängt die App leer an.
+
+### Auf eigenem Webspace
+
 1. **Hochladen** auf einen Webspace mit **HTTPS**, z. B. nach `games.thai-klasse.de/cachevisier/`. Ohne HTTPS gibt es keine Kamera, kein GPS und keine Sensoren.
 2. **KI-Skript:**
    - Im Plesk-Dateimanager neben dem Webroot einen Ordner `cachevisier-data` anlegen, also dort, wo auch `rosko-data` liegt.
