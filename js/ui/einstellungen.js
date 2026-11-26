@@ -74,7 +74,8 @@ function showSettings() {
     ${f('ocUser', 'Dein OC-Benutzername (für „gefunden“)')}
     ${f('ocRadius', 'Umkreis (km)', 'number', 'min="0.5" max="50" step="0.5"')}
     ${chk('hideFound', 'Gefundene OC-Caches nicht laden')}
-    `) + `<p class="sub">CacheVisier ${APP_VERSION}</p>`, b => {
+    `) + `<p class="sub">CacheVisier ${APP_VERSION} <span id="vStand"></span></p>`, b => {
+    fetch('version.txt', { cache: 'no-cache' }).then(r => (r.ok ? r.text() : '')).then(t => { const [sha, ts] = t.trim().split(' '); const el = b.querySelector('#vStand'); if (el && sha) el.textContent = `· Stand ${sha}${ts ? ' vom ' + ts.slice(8, 10) + '.' + ts.slice(5, 7) + '. ' + ts.slice(11, 16) + ' UTC' : ''}`; }).catch(() => {});
     b.querySelectorAll('details.grp').forEach(d => { d.ontoggle = () => { S.setOpen = S.setOpen || {}; S.setOpen[d.dataset.g] = d.open; }; });
     b.querySelectorAll('select[data-k]').forEach(el => { el.value = s[el.dataset.k]; });
     const kiWeg = () => { b.querySelector('#kiDirekt').hidden = s.kiMode === 'skript'; b.querySelector('#kiSkript').hidden = s.kiMode !== 'skript'; };

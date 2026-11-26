@@ -59,6 +59,7 @@ jobs:
           cp package/dist/sql-wasm.js package/dist/sql-wasm.wasm "$GITHUB_WORKSPACE/_site/vendor/sqljs/"
           cp package/LICENSE "$GITHUB_WORKSPACE/_site/vendor/sqljs/LICENSE"
           cd "$GITHUB_WORKSPACE/_site"
+          echo "${GITHUB_SHA::7} $(date -u +%Y-%m-%dT%H:%MZ)" > version.txt   # Stand, den die App in den Einstellungen zeigt
           echo "Ausgeliefert:"; find . -type f | sort
           echo "SHA-256 der Bibliotheken:"; sha256sum vendor/leaflet/leaflet.js vendor/leaflet/leaflet.css vendor/sqljs/sql-wasm.js vendor/sqljs/sql-wasm.wasm
       - uses: actions/configure-pages@v5

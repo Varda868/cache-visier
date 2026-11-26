@@ -1,5 +1,5 @@
 /* CacheVisier Service Worker: offline-fähige App-Hülle samt eigener Bibliotheken, Kartenkacheln im Cache, Datei-Empfang über „Teilen“ */
-const V = 'cv-shell-v9';
+const V = 'cv-shell-v10';
 // App-Module (js/), Liste wie im Ordner
 const MODULE = ['./js/kern/ausruestung.js', './js/kern/caches.js', './js/kern/formeln.js', './js/kern/geo.js', './js/kern/index.js', './js/kern/reflektor.js', './js/kern/route.js', './js/kern/sonne.js', './js/main.js', './js/ui/ankunft.js', './js/ui/ansagen.js', './js/ui/anzeige.js', './js/ui/basis.js', './js/ui/blaetter.js', './js/ui/einstellungen.js', './js/ui/funk.js', './js/ui/import.js', './js/ui/kamera.js', './js/ui/karte.js', './js/ui/ki-auswertung.js', './js/ui/log.js', './js/ui/multi.js', './js/ui/nacht.js', './js/ui/offline.js', './js/ui/peilung.js', './js/ui/sensoren.js', './js/ui/talk.js', './js/ui/tour.js', './js/ui/ziel-routing.js'];
 const SHELL = ['./', './index.html', './style.css', './nostr.js', './ki.js', './bcon/codec2.js', './bcon/sprechfunk.js', './bcon/netz.js', './bcon/secp256k1.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', ...MODULE];
@@ -8,7 +8,7 @@ const VENDOR = ['./vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css', '
 const CDN = 'cv-cdn-v1', TILES = 'cv-tiles-v1', INBOX = 'cv-inbox', MAX_TILES = 3000;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(V).then(c => c.addAll(SHELL).then(() => Promise.allSettled(VENDOR.map(u => c.add(u))))).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(V).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))).then(() => Promise.allSettled(VENDOR.map(u => c.add(u))))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => ![V, CDN, TILES, INBOX].includes(k)).map(k => caches.delete(k))))
@@ -29,7 +29,8 @@ async function cacheFirst(req, name, trim) {
 async function networkFirst(req) {
   const c = await caches.open(V);
   try {
-    const res = await fetch(req);
+    // GitHub Pages lässt Dateien 10 min im Browser-Zwischenspeicher: immer beim Server nachfragen (304, wenn unverändert)
+    const res = req.mode === 'navigate' ? await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : await fetch(req, { cache: 'no-cache' });
     if (res.ok) c.put(req, res.clone());
     return res;
   } catch (e) {
