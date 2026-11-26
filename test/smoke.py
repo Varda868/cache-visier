@@ -58,7 +58,8 @@ async def main():
         await pg.click('#bTorch'); await pg.wait_for_timeout(300); print('Toast Lampe:', await pg.text_content('#toast'))
         await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200); print('Einstellungsfelder:', await pg.locator('#sheetBody [data-k]').count()); await pg.click('#sheetClose')
         await pg.click('#bList'); await pg.click('#lDiag'); await pg.wait_for_timeout(300); await pg.screenshot(path='shot-diag.png'); await pg.click('#sheetClose')
-        # KI mit gemocktem fetch (Skript + OSM)
+        # KI mit gemocktem fetch (Skript + OSM) – Weg „eigenes KI-Skript“
+        await pg.evaluate("CV.set.kiMode = 'skript'; CV.set.apiUrl = './api/ki.php'")
         await pg.evaluate("""() => { const of = window.fetch; window.fetch = async (u, o) => {
           u = String(u);
           if (u.includes('api/ki.php')) return new Response(JSON.stringify({ok:true, model:'Groq · mock', result:{kurzfassung:'Magnetischer Petling unten am Geländer, Logbuch nass.', zustand:'wartung_noetig', letzter_fund:'2025-11-13', letzte_wartung:'', dnf_serie:1,

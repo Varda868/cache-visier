@@ -14,7 +14,7 @@ async def main():
               {instruction:'Nach Osten auf Testweg gehen.', begin_shape_index:0},{instruction:'Links abbiegen auf Brückenweg.', begin_shape_index:1},{instruction:'Sie haben Ihr Ziel erreicht.', begin_shape_index:2}]}]}})); }
           return of(u, o); }; }""", SHAPE)
         await pg.click('#bStart'); await pg.wait_for_timeout(1200)
-        await pg.evaluate("""() => { CV.set.apiToken = 'tok123'; CV.caches.set('GC7FAX4', {geocode:'GC7FAX4', name:'Testmulti', type:'multi', lat:48.3712, lon:10.8712, d:2, t:1.5, size:'Small', hint:'', logs:[], wpts:[], src:'gpx'}); }""")
+        await pg.evaluate("""() => { CV.set.apiToken = 'tok123'; CV.set.routeUrl = './api/route.php'; CV.caches.set('GC7FAX4', {geocode:'GC7FAX4', name:'Testmulti', type:'multi', lat:48.3712, lon:10.8712, d:2, t:1.5, size:'Small', hint:'', logs:[], wpts:[], src:'gpx'}); }""")
         await pg.click('#bRoute'); await pg.wait_for_timeout(300)
         print('Toast ohne Ziel:', await pg.text_content('#toast'))
         await pg.click('#bList'); await pg.click('li.row'); await pg.wait_for_timeout(2200)

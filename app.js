@@ -589,10 +589,11 @@ function routePointAt(pts, cum, s) {
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 
 const $ = s => document.querySelector(s);
-const PAGES = /\.github\.io$/.test(location.hostname); // GitHub Pages: kein PHP – Routing direkt zu FOSSGIS, KI-Skript liegt woanders
+const KIA = () => (window.CVKI ? CVKI.ANBIETER : []);
+function kiDefaults() { const o = {}; for (const a of KIA()) { o['kiKey_' + a.id] = ''; o['kiModel_' + a.id] = a.model; } return o; }
 const DEFAULTS = {
   fovH: 50, phoneH: 1.4, compassOffset: 0, sensor: 'auto', autoMode: true, maxLogs: 40,
-  apiUrl: PAGES ? '' : './api/ki.php', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
+  kiMode: 'direkt', ...kiDefaults(), apiUrl: '', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
   keepAwake: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
   talkOn: false, talkName: '', talkPw: '', talkCache: true, talkLive: 'aus', talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
@@ -600,7 +601,7 @@ const DEFAULTS = {
   gear_special_tool: false, gear_water: false, gear_measure: false, gear_ladder: false, gear_pole: false, gear_wading: false,
   gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false, gear_boat: false, gear_scuba: false, gear_swimming: false,
   tourRadius: 2000, tourLoop: false,
-  routing: false, routeUrl: PAGES ? 'https://valhalla1.openstreetmap.de' : './api/route.php', routeCosting: 'pedestrian', lookahead: 25
+  routing: false, routeUrl: 'https://valhalla1.openstreetmap.de', routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
   set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false,
@@ -1351,7 +1352,15 @@ async function resolveZones(c, res) {
   }
   return zones;
 }
+function kiAnbieter() { // eigene Schlüssel, in fester Reihenfolge (Gemini zuerst: kostenlos und bildfähig)
+  return KIA().map(a => ({ ...a, key: String(S.set['kiKey_' + a.id] || '').trim(), model: String(S.set['kiModel_' + a.id] || '').trim() })).filter(a => a.key && a.model);
+}
+function kiZiel() { const a = kiAnbieter(); return S.set.kiMode === 'skript' ? 'dein KI-Skript (' + (S.set.apiUrl || 'Adresse fehlt') + ')' : a.length ? a.map(x => x.name).join(' → ') : 'die KI (noch kein Schlüssel eingetragen)'; }
 async function kiCall(body) {
+  if (S.set.kiMode !== 'skript') {
+    if (!window.CVKI) throw new Error('KI-Baustein fehlt');
+    try { return await CVKI.run(body, kiAnbieter()); } catch (e) { throw new Error('KI: ' + (e && e.message || e)); }
+  }
   if (!S.set.apiUrl) throw new Error('KI-Adresse fehlt (Einstellungen)');
   const r = await fetch(S.set.apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({ ok: false, error: 'Antwort nicht lesbar (HTTP ' + r.status + ')' }));
@@ -1395,7 +1404,7 @@ function showAi() {
   const c = curCache(); if (!c) return toast('Kein Cache als Ziel');
   const a = S.ai.get(c.geocode);
   let body;
-  if (!a) body = `<p>Noch nicht ausgewertet. Die Logs (${(c.logs || []).length}) gehen an dein KI-Skript (${esc(S.set.apiUrl)}).</p>`;
+  if (!a) body = `<p>Noch nicht ausgewertet. Die Logs (${(c.logs || []).length}) gehen an ${esc(kiZiel())}.</p>`;
   else {
     const z = ZUSTAND[a.zustand] || ZUSTAND.unklar;
     const hilfe = (a.suchhilfe || []).concat((a.versteck_hinweise || []).map(h => ({ ...h, kategorie: 'versteck' })));
@@ -1538,7 +1547,7 @@ async function showMulti(c, focusNr) {
   const m = await getMulti(c.geocode);
   if (!m) {
     const n = htmlText(c.desc || '').length;
-    openSheet(`🧩 Stationen · ${c.geocode}`, `<p>${n ? `Die Beschreibung (${n} Zeichen) und ${(c.wpts || []).length} Wegpunkte gehen an dein KI-Skript. Die KI zieht Stationen, Aufgaben, Variablen und die Finalformel heraus.` : 'Für diesen Cache ist keine Beschreibung gespeichert. In c:geo den Cache mit Details speichern oder GPX mit Beschreibung laden.'}</p>
+    openSheet(`🧩 Stationen · ${c.geocode}`, `<p>${n ? `Die Beschreibung (${n} Zeichen) und ${(c.wpts || []).length} Wegpunkte gehen an ${esc(kiZiel())}. Die KI zieht Stationen, Aufgaben, Variablen und die Finalformel heraus.` : 'Für diesen Cache ist keine Beschreibung gespeichert. In c:geo den Cache mit Details speichern oder GPX mit Beschreibung laden.'}</p>
       <div class="tools"><button id="mGo">🤖 Stationen aus dem Listing lesen</button></div>`, b => {
       b.querySelector('#mGo').onclick = () => run(async () => { toast('🤖 lese das Listing …', 60000); await aiMulti(c); toast('✅ Stationen gelesen'); renderStage(); showMulti(c); });
     });
@@ -2297,8 +2306,18 @@ function showSettings() {
     <h4>Daten</h4>
     ${f('maxLogs', 'Logs pro Cache', 'number', 'min="5" max="200" step="5"')}
     <h4>KI-Auswertung</h4>
-    ${f('apiUrl', 'Adresse deines KI-Skripts')}
-    ${f('apiToken', 'Token (wie APP_TOKEN in config.php)', 'password')}
+    <label class="f"><span>Weg</span><select data-k="kiMode"><option value="direkt">direkt mit eigenem Schlüssel</option><option value="skript">über ein eigenes KI-Skript (Server)</option></select></label>
+    <div id="kiDirekt">
+      <p class="sub">Jeder trägt seinen eigenen Schlüssel ein. Er bleibt nur auf diesem Handy und geht direkt an den Anbieter, kein Server dazwischen. Es reicht einer; mit mehreren springt die App beim Fehler (Limit, Ausfall) zum nächsten. 🆓 = mit kostenloser Stufe, 📷 = versteht Fotos (für Multi-Stationen).</p>
+      ${KIA().map(a => `<div class="kiA" data-a="${a.id}"><div class="kiH"><b>${a.name}</b> ${a.frei ? '🆓' : ''}${a.vision ? '📷' : ''} <a href="${a.keyUrl}" target="_blank" rel="noopener">Schlüssel holen ↗</a></div>
+        ${f('kiKey_' + a.id, 'Schlüssel', 'password', 'autocomplete="off" spellcheck="false"')}
+        ${f('kiModel_' + a.id, 'Modell', 'text', `list="kiL_${a.id}" spellcheck="false" placeholder="${a.model ? '' : 'mit „Prüfen“ auswählen'}"`)}<datalist id="kiL_${a.id}"></datalist>
+        <button class="kiP" data-a="${a.id}">Prüfen und Modelle laden</button> <small class="kiS"></small></div>`).join('')}
+    </div>
+    <div id="kiSkript">
+      ${f('apiUrl', 'Adresse deines KI-Skripts (api/ki.php auf deinem Server)')}
+      ${f('apiToken', 'Token (wie APP_TOKEN in config.php)', 'password')}
+    </div>
     <h4>Opencaching (OKAPI)</h4>
     ${f('okapiKey', 'Consumer Key (opencaching.de/okapi/signup.html)')}
     ${f('ocUser', 'Dein OC-Benutzername (für „gefunden“)')}
@@ -2306,6 +2325,22 @@ function showSettings() {
     ${chk('hideFound', 'Gefundene OC-Caches nicht laden')}
     <p class="sub">CacheVisier ${APP_VERSION}</p>`, b => {
     b.querySelectorAll('select[data-k]').forEach(el => { el.value = s[el.dataset.k]; });
+    const kiWeg = () => { b.querySelector('#kiDirekt').hidden = s.kiMode === 'skript'; b.querySelector('#kiSkript').hidden = s.kiMode !== 'skript'; };
+    kiWeg();
+    b.querySelectorAll('.kiP').forEach(btn => {
+      btn.onclick = () => run(async () => {
+        const a = KIA().find(x => x.id === btn.dataset.a), st = btn.parentNode.querySelector('.kiS');
+        const key = String(s['kiKey_' + a.id] || '').trim(); if (!key) return toast('Erst den Schlüssel eintragen');
+        st.textContent = '… prüfe';
+        try {
+          const ids = await CVKI.models({ ...a, key });
+          b.querySelector('#kiL_' + a.id).innerHTML = ids.slice(0, 300).map(i => `<option value="${esc(i)}">`).join('');
+          const m = String(s['kiModel_' + a.id] || '').trim(), da = !m || ids.includes(m);
+          if (!m && ids.length) { s['kiModel_' + a.id] = ids[0]; b.querySelector(`[data-k="kiModel_${a.id}"]`).value = ids[0]; saveSettings(); }
+          st.textContent = `✅ Schlüssel gilt · ${ids.length} Modelle${da ? '' : ' · ⚠️ „' + m + '“ nicht in der Liste'}`;
+        } catch (e) { st.textContent = '❌ ' + (e && e.message || e); }
+      });
+    });
     b.querySelectorAll('[data-k]').forEach(el => {
       el.onchange = () => {
         const k = el.dataset.k;
@@ -2315,6 +2350,7 @@ function showSettings() {
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
         if (k === 'mapDark') applyMapDark();
         if (k === 'night') applyNight();
+        if (k === 'kiMode') kiWeg();
         if (/^talk(On|Pw|Cache|Relays)$/.test(k)) { clearTimeout(S.talkT); S.talkT = setTimeout(() => run(initTalk), 800); }
         if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };

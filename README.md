@@ -1,6 +1,6 @@
 # CacheVisier 0.1
 
-PWA zum Cachen vor Ort.
+PWA zum Cachen vor Ort. Läuft ohne eigenen Server: Jeder lädt seine Caches aus seinem eigenen c:geo-Backup (oder GPX/Opencaching) und nutzt für die KI seinen eigenen Schlüssel. Alles bleibt auf dem eigenen Handy.
 - **Handy senkrecht:** Kamerabild mit Fadenkreuz, Markierung über dem Ziel, Abstand und Richtung.
 - **Handy flach:** OSM-Karte mit dir, Ziel, Wegpunkten und KI-Suchzonen.
 
@@ -23,9 +23,9 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
 
 - Im Repo unter Settings → Pages: Source „Deploy from a branch“, Branch `main`, Ordner `/ (root)`. Die App läuft dann unter `https://varda868.github.io/cache-visier/`.
 - `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert ausliefert.
-- GitHub Pages kann kein PHP. Deshalb ist dort das Routing auf FOSSGIS direkt voreingestellt (gedrosselt, siehe unten), und die KI-Adresse ist leer.
-- Für die KI-Auswertung liegt `api/` (mit `config.php`) auf einem eigenen Webspace mit PHP. In den Einstellungen trägst du dann dessen volle Adresse ein, z. B. `https://…/api/ki.php`, und in `config.php` `ALLOWED_ORIGIN = 'https://varda868.github.io'`.
-- Daten wie Caches, Einstellungen und der b:con-Schlüssel hängen an der Adresse. Unter github.io fängt die App leer an.
+- Eigene Domain: in Settings → Pages unter „Custom domain“ eintragen und beim DNS-Anbieter auf GitHub zeigen lassen (Subdomain: CNAME auf `varda868.github.io`; Zone/Apex: A-Einträge 185.199.108.153 bis 185.199.111.153). Danach „Enforce HTTPS“.
+- Kein PHP nötig: Routing geht direkt zu FOSSGIS (gedrosselt, siehe unten), die KI direkt mit dem eigenen Schlüssel (siehe „KI mit eigenem Schlüssel“). `api/` wird dort nicht ausgeführt und nur für den Betrieb auf einem eigenen Server gebraucht.
+- Daten wie Caches, Einstellungen und der b:con-Schlüssel hängen an der Adresse (Domain). Eine neue Adresse fängt leer an, deshalb die Adresse festlegen, bevor die App installiert wird.
 
 ### Auf eigenem Webspace
 
@@ -57,7 +57,19 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
 
 Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Datenbank im eigenen, geschützten App-Speicher. Deshalb der Weg über das Backup.
 
-## KI-Anbieter (`$PROVIDERS` in config.php)
+## KI mit eigenem Schlüssel (Standard)
+
+- ☰ → ⚙️ → KI-Auswertung → Weg „direkt mit eigenem Schlüssel“. Bei einem oder mehreren Anbietern den Schlüssel eintragen und mit „Prüfen und Modelle laden“ testen. Das fragt nur die Modellliste ab und kostet nichts.
+- Der Schlüssel bleibt in den Einstellungen auf dem Handy und geht direkt an den Anbieter. Es gibt keinen Server dazwischen.
+- Reihenfolge: Gemini, Groq, OpenRouter, Mistral, OpenAI, Claude. Bei Limit, Ausfall oder unbrauchbarer Antwort kommt der nächste mit Schlüssel dran.
+- 📷 Fotos (Multi-Stationen, Foto-Frage) gehen nur an bildfähige Anbieter: Gemini, OpenAI, Claude.
+- Aus dem Browser erreichbar (geprüft am 26.11.2026): Gemini, Groq, OpenRouter, Mistral, OpenAI, Claude. Nicht erreichbar, weil sie Browser-Aufrufe sperren: GitHub Models, Z.ai, Cerebras.
+- Kostenlose Stufen gibt es nach meinem Stand bei Gemini, Groq, OpenRouter (Modelle mit `:free`) und Mistral. Die Bedingungen der Anbieter ändern sich, also dort prüfen.
+- `ki.js` enthält dieselben Prompts, Schemas und Prüfungen wie `api/ki.php`. `test/test_ki.js` gleicht beide über PHP ab.
+
+## KI über ein eigenes Skript (`$PROVIDERS` in config.php)
+
+Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-Skript“, Adresse und Token eintragen.
 
 `ki.php` probiert die Anbieter der Reihe nach. Bei Limit (429), Ausfall oder unbrauchbarer Antwort kommt der nächste dran. Die Antwort nennt, wer geantwortet hat.
 
