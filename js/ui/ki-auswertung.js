@@ -33,6 +33,7 @@ async function resolveZones(c, res) {
     const z = { label: `${p.anker}${p.abstand_m > 0 ? ' · ' + p.abstand_m + ' m' : ''}${p.richtung_text ? ' · ' + p.richtung_text : ''}`, zitat: p.zitat || '', sicherheit: p.sicherheit || '' };
     if (anchor) {
       z.anchorDist = Math.round(anchor.dist);
+      if (anchor.dist > 0 || p.osm_key) { z.alat = anchor.lat; z.alon = anchor.lon; z.anker = String(p.anker || '').slice(0, 30); } // fürs Kamerabild
       if (p.abstand_m > 0 && p.richtung_grad >= 0) { const q = destPoint(anchor.lat, anchor.lon, p.abstand_m, p.richtung_grad); z.lat = q.lat; z.lon = q.lon; z.r = Math.max(3, p.abstand_m * 0.3); }
       else { z.lat = anchor.lat; z.lon = anchor.lon; z.r = p.abstand_m > 0 ? p.abstand_m : 5; z.ring = p.abstand_m > 0; }
     } else z.unresolved = true;

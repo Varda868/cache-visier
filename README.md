@@ -95,6 +95,7 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 - **Modellnamen ändern sich.** Bei „model not found“ den Namen in der Konsole des Anbieters nachsehen.
 - **Ablauf:** Die App schickt Hint und bis zu 40 Logs (je 900 Zeichen) an `ki.php`. Zurück kommen eine Kurzfassung, der Zustand, die DNF-Serie, Versteckhinweise mit Zitat und Lagehinweise („8 m neben der Bushaltestelle“).
 - **Suchzonen:** Die App sucht den Bezugspunkt in OpenStreetMap im Umkreis von 170 m um die Listing-Koordinaten und zeichnet daraus eine Suchzone. Jede Zone lässt sich als Ziel setzen.
+- **Suchzonen im Kamerabild** (`ui/zonen-ar.js`): Zonen im Umkreis von 150 m liegen als Ringe auf dem Boden – Kreispunkte am Boden (Handyhöhe tiefer) einzeln projiziert, dadurch perspektivisch als Ellipse. Farbe nach Sicherheit, Bezugsobjekt als 📍-Nadel. Abschaltbar (⚙️).
 - Das sind Vorschläge, keine Koordinaten. Das Zitat zeigt, worauf sie beruhen.
 
 ## Multi-Stationen und Foto → KI
@@ -169,6 +170,7 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
     - **Schwebender Sprechknopf** links unten über der Infoleiste, sobald talk an ist und es einen Kanal gibt (Cache als Ziel oder Team-Passwort). Das kleine Zeichen oben rechts zeigt den Kanal (🧩 Cache, 🔒 Team; umschalten im 💬-Blatt). Beim Sprechen rot mit Sekunden und Pegel, bei eingehender Durchsage pulsiert er blau. Bei offenem Blatt ist er ausgeblendet, bei offener Peilleiste rutscht er nach oben.
     - Wird die Taste losgelassen, während das Mikrofon noch aufgeht (z. B. beim ersten Freigabe-Dialog), bleibt keine Aufnahme hängen.
   - **📍 Live-Position** (⚙️, Standard aus): alle 30 s im Team- oder auch im Cache-Kanal. Als flüchtiges Event (Art 20442), das Relays nicht speichern, versiegelt. Mitcacher erscheinen auf der Karte und im 💬-Blatt mit Entfernung („👥 LISA 34 m“).
+  - **👥 Team-Suche** (`kern/team.js`, `ui/team.js`): „Suche aufteilen“ im 💬-Blatt teilt 20 m ums Ziel in gleich große Sektoren für alle, die in den letzten Minuten im Kanal aktiv waren. Die Teilung wird so gedreht, dass jeder mit bekannter Position möglichst mittig in seinem Stück steht. Der Plan geht als normale Chatnachricht (Art 4423, lesbarer Text + Feld `plan`) – die b:con-App zeigt den Text. Mit „Mitmachen“ gehen die besuchten 3-m-Rasterfelder alle 20 s flüchtig (Art 20442, Feld `team`, ohne Koordinaten) an die anderen; Karte, Kamerabild und die Leiste zeigen „x % abgesucht“. „✅“ beendet für alle, Pläne verfallen nach 2 h.
   - Krypto ohne fremde Bibliothek (`nostr.js`), geprüft gegen die offiziellen Testvektoren von BIP-340, RFC 8439 und NIP-44 und gegen eine Python-Referenz.
 - **Attribute und Ausrüstung:**
   - Attribute kommen aus c:geo (`cg_attributes`), GPX und Opencaching.

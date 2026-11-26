@@ -32,6 +32,7 @@ function showSettings() {
     <label class="f"><span>Karte dunkel</span><select data-k="mapDark"><option value="on">immer</option><option value="auto">nach Sonnenstand</option><option value="off">nie</option></select></label>
     ${chk('autoZoom', 'Karte zoomt automatisch (Ziel bzw. nächste Abbiegung im Bild)')}
     ${chk('keepAwake', 'Bildschirm anlassen')}
+    ${chk('zonenAR', '🎯 KI-Suchzonen als Ringe im Kamerabild')}
     ${chk('camSave', '🔋 Kamera aus, solange die Karte zu sehen ist (Akku sparen; mit Lampe bleibt sie an)')}
     <h4>Unterwegs</h4>
     ${chk('speak', 'Ansagen per Sprache (Abstände 2 km … 10 m, Abzweigungen)')}

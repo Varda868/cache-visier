@@ -293,6 +293,33 @@ t('Stationen auflösen inkl. Peilung', () => {
 });
 
 // c:geo-Datenbank nachbauen
+t('Team: Sektoren nach Seite verteilt, jeder genau einer', () => {
+  const lat0 = 48.37, lon0 = 10.87, pk = c => c.repeat(64);
+  const leute = [{ pk: pk('a'), n: 'ANNA', lat: lat0 - 0.0002, lon: lon0 }, { pk: pk('b'), n: 'BEN', lat: lat0 + 0.0002, lon: lon0 + 0.00005 }, { pk: pk('c'), n: 'CEM' }];
+  const s = A.teileSektoren(lat0, lon0, leute);
+  assert.strictEqual(s.length, 3);
+  const v = s.map(x => x.von).sort((a, b) => a - b); assert.ok(s.every(x => Math.abs(x.bis - x.von - 120) < 0.2) && Math.abs(v[1] - v[0] - 120) < 0.2 && Math.abs(v[2] - v[1] - 120) < 0.2);
+  const anna = s.find(x => x.n === 'ANNA'), ben = s.find(x => x.n === 'BEN');
+  assert.ok(A.inSektor(180, anna), 'Anna steht im Süden'); assert.ok(A.inSektor(10, ben), 'Ben im Norden');
+  assert.deepStrictEqual(A.teileSektoren(lat0, lon0, [...leute].reverse()), s); /* gleiche Eingabe → gleicher Plan */
+  assert.strictEqual(A.teileSektoren(lat0, lon0, [leute[0]])[0].name, 'rundum');
+  const zwei = A.teileSektoren(lat0, lon0, leute.slice(0, 2)); /* genau Süd und Nord: Teilung gedreht, jeder mittig */
+  assert.deepStrictEqual(zwei.map(x => x.name), ['S', 'N']); assert.ok(A.inSektor(0, zwei[1]) && A.inSektor(350, zwei[1]) && !A.inSektor(180, zwei[1]));
+});
+t('Team: Raster, Anteil und Planprüfung', () => {
+  const lat0 = 48.37, lon0 = 10.87, k = A.zelle(lat0, lon0, lat0 + 6 / 110540, lon0);
+  assert.strictEqual(k, '2,0'); const m = A.zellMitte(lat0, lon0, k); near(A.haversine(lat0, lon0, m.lat, m.lon), 6, 0.1);
+  const s = { von: 0, bis: 90 }, alle = new Set();
+  for (let i = -7; i <= 7; i++) for (let j = -7; j <= 7; j++) alle.add(i + ',' + j);
+  assert.strictEqual(A.sektorAnteil(s, 20, alle), 1); assert.strictEqual(A.sektorAnteil(s, 20, new Set()), 0);
+  const halb = A.sektorAnteil({ von: 0, bis: 360 }, 20, new Set([...alle].filter(x => +x.split(',')[0] > 0)));
+  assert.ok(halb > 0.4 && halb < 0.5, String(halb));
+  assert.ok(A.zellOk('-3,12') && !A.zellOk('1,2,3') && !A.zellOk('<b>'));
+  assert.strictEqual(A.planPruefen({ v: 1, gc: 'GC1', ts: 5, lat: 48, lon: 10, s: [{ pk: 'x', von: 0, bis: 360 }] }), null);
+  const p = A.planPruefen({ v: 1, gc: 'GC1', ts: 5, lat: 48, lon: 10, r: 500, s: [{ pk: 'a'.repeat(64), n: 'ANNA<script>xyz', von: 0, bis: 360 }] });
+  assert.strictEqual(p.r, 60); assert.strictEqual(p.s[0].n.length, 12);
+  assert.deepStrictEqual(A.planPruefen({ v: 1, gc: 'GC1', ts: 9, ende: true }), { v: 1, gc: 'GC1', ts: 9, ende: true });
+});
 let sqlite; try { sqlite = await import('node:sqlite'); } catch (e) { sqlite = null; }
 if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
   const db = new sqlite.DatabaseSync(':memory:');

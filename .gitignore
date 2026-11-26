@@ -4,3 +4,4 @@ test/mock/last.json
 *.png.tmp
 shot-*.png
 test/*.png
+vendor/

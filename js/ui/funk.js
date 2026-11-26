@@ -2,6 +2,7 @@ import { esc, fmtDist, haversine } from '../kern/geo.js';
 import { buzz } from './ansagen.js';
 import { $, S, run, toast } from './basis.js';
 import { loadScript } from './import.js';
+import { teamZellenEmpfang } from './team.js';
 import { NX, talkEvent, talkRufname } from './talk.js';
 
 /* ---------- Sprechfunk über Nostr mit den Bausteinen der b:con-App (bcon/: Codec2, Sprechfunk, netz.js) ---------- */
@@ -113,6 +114,7 @@ async function voicePlay(d) {
 async function liveEmpfang(ev, chan) {
   try {
     const j = JSON.parse(await NX().nip44Decrypt(chan.ck, ev.content));
+    if (j.team) teamZellenEmpfang(ev.pubkey, j);
     if (!isFinite(j.lat) || !isFinite(j.lon)) return;
     S.talk.pos[ev.pubkey] = { name: String(j.n || ev.pubkey.slice(0, 6)).slice(0, 9), lat: +j.lat, lon: +j.lon, acc: +j.acc || 0, ts: ev.created_at * 1000, live: true, chan: chan.icon + ' ' + chan.name };
     drawTalkPos(); talkRenderMates();

@@ -8,3 +8,4 @@ export * from './route.js';
 export * from './sonne.js';
 export * from './warnung.js';
 export * from './sicherung.js';
+export * from './team.js';

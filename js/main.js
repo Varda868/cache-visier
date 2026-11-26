@@ -36,6 +36,8 @@ import './ui/talk.js';
 import './ui/tour.js';
 import './ui/warnungen.js';
 import './ui/ziel-routing.js';
+import './ui/zonen-ar.js';
+import './ui/team.js';
 
 /* ---------- Start ---------- */
 async function start() {

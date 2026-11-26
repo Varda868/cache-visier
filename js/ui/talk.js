@@ -3,6 +3,7 @@ import { esc, fmtCoord } from '../kern/geo.js';
 import { buzz } from './ansagen.js';
 import { $, S, idbGet, idbPut, openSheet, run, toast } from './basis.js';
 import { LIVE_KIND, bconVoice, bindPtt, drawTalkPos, liveEmpfang, talkFab, talkRenderMates, voiceWeiter } from './funk.js';
+import { teamPlanEmpfang, teamStart } from './team.js';
 import { curCache, setTarget } from './ziel-routing.js';
 
 /* ---------- b:con talk über öffentliche Nostr-Relays (Chat Art 4423, Sprechfunk Art 4420 nur als Hinweis) ---------- */
@@ -77,6 +78,7 @@ async function talkEvent(ev) {
     try {
       const raw = chan ? await X.nip44Decrypt(chan.ck, ev.content) : await X.nip44Decrypt(await X.conversationKey(T.sk, ev.pubkey), ev.content);
       const j = JSON.parse(raw); msg.name = String(j.n || '').slice(0, 12) || ev.pubkey.slice(0, 6); msg.text = String(j.t || '').slice(0, 500);
+      if (j.plan && chan) teamPlanEmpfang(j.plan, ev.pubkey, chan, eigen);
     } catch (e) { return; }
   }
   if (!msg.text) return;
@@ -111,13 +113,13 @@ function talkRenderList() {
   if (!list.length) el.innerHTML = '<li class="empty">Noch keine Nachrichten in deinen Kanälen (letzte 24 h).</li>';
   el.scrollTop = el.scrollHeight;
 }
-async function talkSend(text) {
+async function talkSend(text, extra) {
   const T = S.talk, X = NX();
   text = String(text || '').trim(); if (!text) return;
   if (!T.pool || !T.sk) throw new Error('b:con talk ist aus (Einstellungen)');
   const chan = (T.channels || []).find(c => c.id === T.sendTo);
   if (!chan) throw new Error('Kein Kanal: einen Cache als Ziel wählen oder ein Team-Passwort setzen');
-  const body = JSON.stringify({ n: talkRufname(), t: text.slice(0, 500), p: 0 }); // übers Netz nie Durchsage
+  const body = JSON.stringify({ n: talkRufname(), t: text.slice(0, 500), p: 0, ...(extra || {}) }); // übers Netz nie Durchsage; extra z. B. Team-Plan
   const tags = [['L', 'bcon.gruppe'], ['l', chan.kennung, 'bcon.gruppe'], ['gruppe', chan.kennung], ['alt', 'b:con-Chat'],
     ['expiration', String(Math.floor(Date.now() / 1000) + 86400)]];
   const ev = await X.finishEvent({ kind: 4423, tags, content: await X.nip44Encrypt(chan.ck, body) }, T.sk);
@@ -138,7 +140,7 @@ async function showTalk() {
     <ul class="tlist" id="talkList"></ul>
     <button id="tPtt" class="ptt">🎙️ Gedrückt halten zum Sprechen</button>
     <div class="tsend"><input id="tText" type="text" maxlength="500" placeholder="Nachricht …"><button id="tSend">➤</button></div>
-    <div class="tools"><button data-q="pos">📍 Standort</button>${c ? '<button data-q="found">✅ Gefunden</button>' : ''}${S.target ? '<button data-q="ziel">🎯 Ziel teilen</button>' : ''}<button data-q="help">🙋 Hilfe</button></div>
+    <div class="tools"><button data-q="pos">📍 Standort</button>${c ? '<button data-q="found">✅ Gefunden</button>' : ''}${S.target ? '<button data-q="ziel">🎯 Ziel teilen</button>' : ''}<button data-q="help">🙋 Hilfe</button>${c && (T.channels || []).length ? '<button data-q="team">👥 Suche aufteilen</button>' : ''}</div>
     <p class="sub">🧩 = alle, die diesen Cache als Ziel haben und b:con talk an. Den Kanal kann lesen, wer den Code kennt – also nicht geheim. 🔒 Team = nur mit eurem Passwort. Über öffentliche Nostr-Relays, verfällt nach 24 h. b:con ist kein Notrufsystem.</p>`, b => {
     talkRenderStatus(); talkRenderList(); talkRenderMates();
     const send = txt => run(async () => { const n = await talkSend(txt); b.querySelector('#tText').value = ''; toast(`💬 gesendet (${n} Relay${n > 1 ? 's' : ''})`); });
@@ -153,6 +155,7 @@ async function showTalk() {
         if (k === 'pos') { if (!here) return toast('Noch keine GPS-Position'); send(here + (c ? ` (bei ${c.geocode})` : '')); }
         if (k === 'found') send(`✅ ${c.geocode} ${c.name} gefunden`);
         if (k === 'ziel') send(`🎯 Ziel: ${S.target.label || S.target.name || ''} ${fmtCoord(S.target.lat, S.target.lon)}`);
+        if (k === 'team') run(teamStart);
         if (k === 'help') send(`🙋 Brauche Hilfe${c ? ' bei ' + c.geocode : ''}${here ? ' – ' + here : ''}`);
       };
     });

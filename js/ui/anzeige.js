@@ -1,6 +1,7 @@
 import { D2R, bearing, compassName, fmtDist, haversine, projectToScreen, screenCols, viewHeading, wrap180 } from '../kern/geo.js';
 import { checkArrival } from './ankunft.js';
 import { checkWarnings } from './warnungen.js';
+import { clearZonesAR, drawZonesAR } from './zonen-ar.js';
 import { announce, buzz } from './ansagen.js';
 import { $, S } from './basis.js';
 import { updateMap } from './karte.js';
@@ -65,7 +66,8 @@ function frame(now) {
         ed.style.transform = `translate(${W / 2 + sx * k}px,${H / 2 + sy * k}px) rotate(${pr.dirDeg}deg)`;
       }
     }
-  } else { $('#marker').hidden = true; $('#edge').hidden = true; }
+    drawZonesAR(sc, p, Math.min(fov, 120));
+  } else { $('#marker').hidden = true; $('#edge').hidden = true; if (S.zonenAR) clearZonesAR(); }
   if (S.mode === 'map' && now - S.lastMap > 250) { S.lastMap = now; updateMap(dist, head); }
   announce(t, R ? R.rest : dist, R);
   if (S.peil) updatePeilbar(sc);
