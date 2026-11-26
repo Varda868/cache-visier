@@ -23,6 +23,19 @@ async def main():
         await pg.route('https://www.opencaching.de/**', lambda r: r.fulfill(status=400, content_type='application/json', headers={'access-control-allow-origin': '*'}, body='{"error":{"developer_message":"Parameter \'consumer_key\' has invalid value: Consumer does not exist.","status":400}}'))
         await pg.click('#sheetClose'); await pg.click('#bList'); await pg.click('#lOc'); await pg.wait_for_timeout(800)
         print('Meldung:', await pg.text_content('#toast'))
+        # OKAPI-Suche mit Benutzer: not_found_by statt found_status (das bräuchte OAuth)
+        urls = []
+        async def oc(route):
+            u = route.request.url; urls.append(u)
+            if 'users/by_username' in u: body = '{"uuid":"U-123"}'
+            elif 'search/nearest' in u: body = '{"results":["OC1","OC2"]}'
+            else: body = '{"OC1":{"code":"OC1","name":"Eins","location":"48.37|10.87","type":"Traditional","status":"Available","is_found":false,"latest_logs":[],"alt_wpts":[],"attrnames":[]},"OC2":{"code":"OC2","name":"Zwei","location":"48.371|10.871","type":"Traditional","status":"Available","is_found":true,"latest_logs":[],"alt_wpts":[],"attrnames":[]}}'
+            await route.fulfill(status=200, content_type='application/json', headers={'access-control-allow-origin': '*'}, body=body)
+        await pg.unroute('https://www.opencaching.de/**'); await pg.route('https://www.opencaching.de/**', oc)
+        await pg.evaluate("CV.set.okapiKey = 'K'; CV.set.ocUser = 'pferseeer'; CV.set.ocUuid = ''; CV.set.hideFound = true")
+        await pg.click('#lOc'); await pg.wait_for_timeout(800)
+        su = [u for u in urls if 'search/nearest' in u][0]
+        print('Suche:', 'not_found_by=U-123' in su, '| found_status:', 'found_status' in su, '| geladen:', await pg.evaluate("[...CV.caches.keys()].filter(k => k.startsWith('OC'))"), '|', await pg.text_content('#toast'))
         print('Fehler:', errs)
         await b.close()
 asyncio.run(main())

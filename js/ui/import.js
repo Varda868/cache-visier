@@ -159,7 +159,8 @@ async function loadOcNearby() {
   toast('⏳ Lade Opencaching …');
   const near = await okapi('caches/search/nearest', {
     center: `${S.pos.lat}|${S.pos.lon}`, radius: S.set.ocRadius, limit: 100, status: 'Available|Temporarily unavailable',
-    user_uuid: uuid || '', found_status: uuid && S.set.hideFound ? 'notfound_only' : ''
+    // found_status geht nur mit OAuth-Zugang (Level 3); not_found_by mit der Benutzer-ID reicht der einfache Schlüssel (Level 1)
+    not_found_by: uuid && S.set.hideFound ? uuid : ''
   });
   const codes = near.results || [];
   if (!codes.length) return toast('Keine OC-Caches im Umkreis');
@@ -170,7 +171,7 @@ async function loadOcNearby() {
       fields: 'code|name|location|type|status|difficulty|terrain|size2|hint2|latest_logs|alt_wpts|owner|gc_code|short_description|description|attrnames' + (uuid ? '|is_found' : ''),
       lpc: S.set.maxLogs, log_fields: 'date|user|type|comment', langpref: 'de|en', user_uuid: uuid || ''
     });
-    for (const c of Object.values(g)) if (c) out.push(mapOkapi(c));
+    for (const c of Object.values(g)) if (c && !(S.set.hideFound && c.is_found)) out.push(mapOkapi(c));
   }
   await mergeCaches(out);
   toast(`✅ ${out.length} Opencaching-Caches geladen`);
