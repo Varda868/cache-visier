@@ -1,0 +1,81 @@
+# CacheVisier: bei jedem Push auf main testen, nur die App-Dateien zusammenstellen
+# (Leaflet und sql.js werden mitgeliefert, nicht von einem CDN geladen) und auf GitHub Pages veröffentlichen.
+name: Tests und Veröffentlichung
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: PHP vorhanden (für den Abgleich ki.js ↔ ki.php)
+        run: php -v
+      - name: Rechnungen, Import, Routing, Tour, Formeln
+        run: node test/test.js
+      - name: Nostr-Krypto (BIP-340, NIP-44, ChaCha20)
+        run: node test/test_nostr.js
+      - name: KI im Browser gleich ki.php, Anbieterkette
+        run: node test/test_ki.js
+      - name: PHP-Syntax
+        run: for f in api/*.php test/*.php; do php -l "$f"; done
+
+  build:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: App-Dateien zusammenstellen
+        run: |
+          set -euo pipefail
+          mkdir -p _site/vendor/leaflet _site/vendor/sqljs
+          cp -r index.html style.css app.js nostr.js ki.js sw.js manifest.webmanifest icon-*.png bcon LICENSE _site/
+          cd "$RUNNER_TEMP"
+          npm pack leaflet@1.9.4 sql.js@1.10.3 --silent
+          tar -xzf leaflet-1.9.4.tgz
+          cp package/dist/leaflet.js package/dist/leaflet.css "$GITHUB_WORKSPACE/_site/vendor/leaflet/"
+          cp -r package/dist/images "$GITHUB_WORKSPACE/_site/vendor/leaflet/"
+          cp package/LICENSE "$GITHUB_WORKSPACE/_site/vendor/leaflet/LICENSE"
+          rm -rf package
+          tar -xzf sql.js-1.10.3.tgz
+          cp package/dist/sql-wasm.js package/dist/sql-wasm.wasm "$GITHUB_WORKSPACE/_site/vendor/sqljs/"
+          cp package/LICENSE "$GITHUB_WORKSPACE/_site/vendor/sqljs/LICENSE"
+          cd "$GITHUB_WORKSPACE/_site"
+          echo "Ausgeliefert:"; find . -type f | sort
+          echo "SHA-256 der Bibliotheken:"; sha256sum vendor/leaflet/leaflet.js vendor/leaflet/leaflet.css vendor/sqljs/sql-wasm.js vendor/sqljs/sql-wasm.wasm
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

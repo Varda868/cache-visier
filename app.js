@@ -3,7 +3,7 @@
    Kamera mit Fadenkreuz (Handy senkrecht) / Karte (Handy waagerecht), Abstand + Richtung,
    Hint, D/T, Logs, Lampe, Fotos, Offline-Logs, Import c:geo-Backup / GPX / Opencaching (OKAPI),
    KI-Auswertung der Logs über ein eigenes PHP-Skript. */
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 
 /* ====================== Reine Hilfsfunktionen (auch in Node testbar) ====================== */
 const D2R = Math.PI / 180, R_EARTH = 6371008.8;
@@ -704,7 +704,8 @@ function loadScript(src) {
 }
 async function loadSqlJs() {
   if (_sql) return _sql;
-  const bases = ['https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/', 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'];
+  // zuerst die mitgelieferte Kopie (vendor/, kein fremder Code neben den KI-Schlüsseln); CDN nur, wenn sie fehlt (lokale Entwicklung)
+  const bases = ['vendor/sqljs/', 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/', 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'];
   let err;
   for (const b of bases) {
     try { if (!window.initSqlJs) await loadScript(b + 'sql-wasm.js'); _sql = await window.initSqlJs({ locateFile: f => b + f }); return _sql; } catch (e) { err = e; }
@@ -2117,7 +2118,7 @@ async function showOffline() {
     b.querySelector('#oGo').onclick = () => run(async () => {
       const r = +b.querySelector('#oR').value, out = b.querySelector('#oOut'), log = t => { out.innerHTML += esc(t) + '<br>'; };
       out.innerHTML = '';
-      const libs = await Promise.allSettled([loadSqlJs(), fetch('https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'), fetch('https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css')]);
+      const libs = await Promise.allSettled([loadSqlJs(), fetch('vendor/leaflet/leaflet.js'), fetch('vendor/leaflet/leaflet.css')]);
       log(`App-Bausteine: ${libs.filter(x => x.status === 'fulfilled').length}/3 im Speicher`);
       const list = [...S.caches.values()].filter(c => !c.found && haversine(ref.lat, ref.lon, c.lat, c.lon) <= r);
       log(`${list.length} ungefundene Caches im Umkreis, davon ${list.filter(c => (c.logs || []).length).length} mit Logs`);

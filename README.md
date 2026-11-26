@@ -1,4 +1,6 @@
-# CacheVisier 0.1
+# CacheVisier 0.2
+
+**App:** https://cache-visier.dns.navy · im Handy-Chrome öffnen, dann „Zum Startbildschirm hinzufügen“.
 
 PWA zum Cachen vor Ort. Läuft ohne eigenen Server: Jeder lädt seine Caches aus seinem eigenen c:geo-Backup (oder GPX/Opencaching) und nutzt für die KI seinen eigenen Schlüssel. Alles bleibt auf dem eigenen Handy.
 - **Handy senkrecht:** Kamerabild mit Fadenkreuz, Markierung über dem Ziel, Abstand und Richtung.
@@ -21,8 +23,8 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
 
 ### Direkt von GitHub (GitHub Pages)
 
-- Im Repo unter Settings → Pages: Source „Deploy from a branch“, Branch `main`, Ordner `/ (root)`. Die App läuft dann unter `https://varda868.github.io/cache-visier/`.
-- `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert ausliefert.
+- Veröffentlicht wird über GitHub Actions (`.github/workflows/pages.yml`, Settings → Pages → Source „GitHub Actions“). Bei jedem Push auf `main` laufen zuerst die Tests, dann werden nur die App-Dateien zusammengestellt und veröffentlicht. `test/`, `api/` und die README liegen nicht auf der Seite.
+- Leaflet 1.9.4 und sql.js 1.10.3 holt der Workflow aus npm und liefert sie unter `vendor/` mit aus. Die App lädt so keinen fremden Code von einem CDN, wichtig, weil dort KI-Schlüssel gespeichert sind. Lokal ohne `vendor/` greift sql.js auf das CDN zurück.
 - Eigene Domain: in Settings → Pages unter „Custom domain“ eintragen und beim DNS-Anbieter auf GitHub zeigen lassen (Subdomain: CNAME auf `varda868.github.io`; Zone/Apex: A-Einträge 185.199.108.153 bis 185.199.111.153). Danach „Enforce HTTPS“.
 - Kein PHP nötig: Routing geht direkt zu FOSSGIS (gedrosselt, siehe unten), die KI direkt mit dem eigenen Schlüssel (siehe „KI mit eigenem Schlüssel“). `api/` wird dort nicht ausgeführt und nur für den Betrieb auf einem eigenen Server gebraucht.
 - Daten wie Caches, Einstellungen und der b:con-Schlüssel hängen an der Adresse (Domain). Eine neue Adresse fängt leer an, deshalb die Adresse festlegen, bevor die App installiert wird.
@@ -213,6 +215,12 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 - „Bildwinkel“ so einstellen, dass die Markierung bei einem bekannten, entfernten Punkt auf dem Punkt sitzt.
 - „Kompass-Korrektur“ verwenden, wenn die Richtung dauerhaft schief ist.
 - In der Nähe von Autos, Geländern und Stahlbeton liegt jeder Handykompass oft deutlich daneben. Eine Acht in der Luft kalibriert ihn neu.
+
+## Lizenz
+
+- CacheVisier: GNU Affero General Public License 3.0 (`LICENSE`), weil die b:con-Bausteine ebenfalls unter AGPL-3.0 stehen.
+- `bcon/`: Codec2 unter LGPL-2.1 (`bcon/LICENSE-codec2`), noble-secp256k1 unter MIT, siehe `bcon/LIESMICH.md`.
+- Mitgeliefert beim Veröffentlichen: Leaflet (BSD-2-Clause) und sql.js (MIT), jeweils mit Lizenzdatei unter `vendor/`.
 
 ## Offen und ungeprüft
 

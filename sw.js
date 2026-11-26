@@ -1,10 +1,12 @@
-/* CacheVisier Service Worker: offline-fähige App-Hülle, CDN- und Kartenkacheln im Cache, Datei-Empfang über „Teilen“ */
-const V = 'cv-shell-v6';
+/* CacheVisier Service Worker: offline-fähige App-Hülle samt eigener Bibliotheken, Kartenkacheln im Cache, Datei-Empfang über „Teilen“ */
+const V = 'cv-shell-v7';
 const SHELL = ['./', './index.html', './style.css', './app.js', './nostr.js', './ki.js', './bcon/codec2.js', './bcon/sprechfunk.js', './bcon/netz.js', './bcon/secp256k1.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+// Bibliotheken liefert die App selbst aus (vendor/, beim Bauen über GitHub Actions); fehlen sie lokal, bricht die Installation nicht ab
+const VENDOR = ['./vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css', './vendor/sqljs/sql-wasm.js', './vendor/sqljs/sql-wasm.wasm'];
 const CDN = 'cv-cdn-v1', TILES = 'cv-tiles-v1', INBOX = 'cv-inbox', MAX_TILES = 3000;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(V).then(c => c.addAll(SHELL).then(() => Promise.allSettled(VENDOR.map(u => c.add(u))))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => ![V, CDN, TILES, INBOX].includes(k)).map(k => caches.delete(k))))
