@@ -32,6 +32,7 @@ function showSettings() {
     <label class="f"><span>Karte dunkel</span><select data-k="mapDark"><option value="on">immer</option><option value="auto">nach Sonnenstand</option><option value="off">nie</option></select></label>
     ${chk('autoZoom', 'Karte zoomt automatisch (Ziel bzw. nächste Abbiegung im Bild)')}
     ${chk('keepAwake', 'Bildschirm anlassen')}
+    ${chk('camSave', '🔋 Kamera aus, solange die Karte zu sehen ist (Akku sparen; mit Lampe bleibt sie an)')}
     <h4>Unterwegs</h4>
     ${chk('speak', 'Ansagen per Sprache (Abstände 2 km … 10 m, Abzweigungen)')}
     ${chk('vibrate', 'Vibration (Abstände, Abzweigungen, Fadenkreuz grün)')}
@@ -132,7 +133,7 @@ async function showDiag() {
     <ul class="list diag">
       <li>${has(window.isSecureContext)} Sichere Verbindung (HTTPS)</li>
       <li>${has('geolocation' in navigator)} GPS · ${S.pos ? '±' + Math.round(S.pos.acc) + ' m' : 'noch keine Position'}</li>
-      <li>${has(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)} Kamera · ${S.track ? 'läuft' : 'aus'}</li>
+      <li>${has(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)} Kamera · ${S.track ? 'läuft' : 'aus'}${S.camRestarts ? ` · ${S.camAus || 0}× auf der Karte ausgeschaltet, Neustart zuletzt ${S.camRestartMs} ms` : ''}</li>
       <li>${has(caps && caps.torch)} Lampe (nur bei laufender Kamera prüfbar)</li>
       <li>${has('ImageCapture' in window)} Fotos in voller Auflösung</li>
       <li>${has('AbsoluteOrientationSensor' in window)} Lagesensor (Quaternion)</li>

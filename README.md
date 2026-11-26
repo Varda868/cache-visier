@@ -218,6 +218,8 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 
 **Warnhinweise** oben im Bild: GPS ungenauer als ±20 m (ab 3 s, weg unter ±15 m), kein Kompass oder Kompass hängt (in der Kamera), Kompass weicht beim Gehen dauerhaft mehr als 40° von der GPS-Laufrichtung ab ("Handy in Form einer 8 schwenken"). Antippen blendet die Warnung 2 min aus.
 
+**🔋 Akku:** Liegt das Handy flach (Karte), schaltet die App die Kamera nach 3 s aus und beim Aufrichten wieder ein. Leuchtet die Lampe, bleibt die Kamera an (die Lampe hängt an ihr). Abschaltbar unter ⚙️ → Anzeige; die 🩺 Diagnose zeigt, wie oft abgeschaltet wurde und wie lange der letzte Neustart dauerte.
+
 **💾 Sicherung:** Einstellungen, eigene Logs und Fotos, Multi-Stände, Tour und KI-Auswertungen als JSON-Datei; Schlüssel und Caches nur auf Wunsch. Laden ergänzt Logs ohne Doppelte, Fotos behalten ihre Zuordnung. Die Einstellungen sind in Gruppen zum Aufklappen sortiert, die wichtigsten zuerst (KI, Unterwegs, Anzeige, Ausrüstung).
 
 **Kalibrieren** (⚙️ Einstellungen):

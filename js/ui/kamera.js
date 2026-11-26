@@ -66,6 +66,19 @@ function setMode(m) {
   if (S.mode === m) return;
   S.mode = m; document.body.dataset.mode = m;
   if (m === 'map') { initMap(); setTimeout(() => S.map && S.map.invalidateSize(), 60); }
+  camSparen(m);
+}
+/* Akku: Kamera aus, solange die Karte zu sehen ist (nach 3 s, damit kurzes Kippen nichts abschaltet).
+   Bleibt an, wenn die Lampe leuchtet – die hängt an der Kamera. Beim Aufrichten startet sie wieder. */
+let _camOffT;
+function camSparen(m) {
+  clearTimeout(_camOffT);
+  if (!S.started || S.set.camSave === false) return;
+  if (m === 'map') _camOffT = setTimeout(() => { if (S.mode === 'map' && S.stream && !S.torch) { stopCamera(); S.camAus = (S.camAus || 0) + 1; S.camVonUns = true; } }, 3000);
+  else if (!S.stream && S.camVonUns) { // nur wieder einschalten, was wir selbst ausgeschaltet haben (nicht nach verweigerter Kamera)
+    S.camVonUns = false; const t0 = performance.now();
+    startCamera().then(ok => { if (ok) { S.camRestartMs = Math.round(performance.now() - t0); S.camRestarts = (S.camRestarts || 0) + 1; } });
+  }
 }
 function cycleModeLock() {
   S.modeLock = S.modeLock == null ? 'cam' : S.modeLock === 'cam' ? 'map' : null;
@@ -74,4 +87,4 @@ function cycleModeLock() {
   toast(S.modeLock ? (S.modeLock === 'cam' ? 'Kamera fest' : 'Karte fest') : 'Automatisch: senkrecht = Kamera, waagerecht = Karte');
 }
 
-export { startCamera, stopCamera, toggleTorch, grabFrame, savePhoto, takePhoto, shrinkImage, keepAwake, updateButtons, setMode, cycleModeLock };
+export { camSparen, startCamera, stopCamera, toggleTorch, grabFrame, savePhoto, takePhoto, shrinkImage, keepAwake, updateButtons, setMode, cycleModeLock };
