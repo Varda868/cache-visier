@@ -175,9 +175,12 @@ body.mapdark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightnes
 body.mapdark .leaflet-container { background: #0e1216; }
 
 /* Nachtmodus: alles rot und gedimmt (schont die Dunkeladaption), darüber liegt nichts */
-#nightveil { position: fixed; inset: 0; z-index: 10000; pointer-events: none; display: none; background: #ff2200; mix-blend-mode: multiply; }
+/* Nachtmodus: rot nur in der Kamera; beim Wechsel zur Karte blendet der Schleier weich aus (und zurück wieder ein) */
+#nightveil { position: fixed; inset: 0; z-index: 10000; pointer-events: none; display: none; opacity: 0; transition: opacity .6s ease; background: #ff2200; mix-blend-mode: multiply; }
 body.night #nightveil { display: block; }
-body.night { filter: brightness(.75); }
+body.night[data-mode=cam] #nightveil { opacity: 1; }
+body { transition: filter .6s ease; }
+body.night[data-mode=cam] { filter: brightness(.75); }
 /* Reflektor-Ringe über dem roten Schleier: in echter Farbe sichtbar */
 #spots { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 10001; pointer-events: none; }
 body[data-mode=map] #spots { display: none; }
