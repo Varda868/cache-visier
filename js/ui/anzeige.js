@@ -1,4 +1,5 @@
 import { D2R, bearing, compassName, fmtDist, haversine, projectToScreen, screenCols, viewHeading, wrap180 } from '../kern/geo.js';
+import { checkArrival } from './ankunft.js';
 import { announce, buzz } from './ansagen.js';
 import { $, S } from './basis.js';
 import { updateMap } from './karte.js';
@@ -30,6 +31,7 @@ function frame(now) {
   $('#rinfo').textContent = R ? `🧭 Weg · Luftlinie ${fmtDist(dist)} · ca. ${Math.max(1, Math.round(R.time * (R.rest / Math.max(R.len, 1)) / 60))} min${R.gap > 15 ? ` · Weg endet ${fmtDist(R.gap)} vor dem Ziel` : ''}`
     : S.set.routing ? (S.routeBusy ? '🧭 Route wird berechnet …' : '🧭 keine Route (☰ ⚙️ Routing prüfen)') : '';
   $('#needle').style.transform = `rotate(${rel != null ? rel : abrg}deg)`;
+  checkArrival(t, dist, p);
   const nearR = Math.max(8, (p.acc || 10) * 1.3);
   const near = dist < nearR;
   $('#near').hidden = !near;

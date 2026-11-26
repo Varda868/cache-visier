@@ -122,6 +122,7 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 
 ## Unterwegs
 
+- **🎯 Zielzone:** Beim ersten Erreichen von 25 m um den Cache oder sein Final (bei schlechtem GPS so weit wie die Ungenauigkeit) zeigt eine Karte einmal D/T, Dosengröße und den letzten Log mit Datum und Alter, bei 2 und mehr „nicht gefunden“ in Folge eine Warnung. Dazu Ansage und Vibration. An Zwischenstationen eines Multis kommt die Karte nicht, und pro Ziel nur einmal je App-Start. „📜 Logs“ öffnet die Logs, sonst verschwindet sie nach 20 s.
 - **🌙 Nachtmodus** (oben):
   - Die ganze Anzeige wird rot und gedimmt, damit die Augen an die Dunkelheit gewöhnt bleiben.
   - Im Kamerabild sucht die App kleine, sehr helle Flecken vor dunklem Grund (Reflektoren/Firetacks), markiert sie mit Ringen in ihrer echten Farbe (weiß, grün, rot, blau …) und nennt die Farbe. Das läuft auf dem Handy, ohne KI und ohne Netz. Am besten mit 🔦 Lampe an.

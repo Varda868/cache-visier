@@ -154,6 +154,19 @@ t('Reflektoren verfolgen: ruhig statt nervös', () => {
   for (let i = 0; i < 6; i++) st = A.trackSpots(st, [d(0.2, 0.2, W, 1200), d(0.7, 0.7, W, 400)], t += 220);
   assert.ok(st.visible.find(v => v.primary).fx < 0.5, 'deutlich stärkerer Reflektor wird hervorgehoben');
 });
+t('Ankunft in der Zielzone: D/T, Größe, letzter Log', () => {
+  const now = Date.UTC(2026, 10, 26, 12);
+  const c = { d: 2, t: 1.5, size: 'small', logs: [
+    { type: 'Didn\'t find it', date: now - 3 * 86400000, author: 'Tom' }, { type: 3, date: now - 9 * 86400000, author: 'Eva' },
+    { type: 'Found it', date: now - 20 * 86400000, author: 'LISA' }] };
+  const a = A.arrivalInfo(c, now);
+  assert.strictEqual(a.dt, 'D2 / T1,5'); assert.strictEqual(a.size, 'Small');
+  assert.strictEqual(a.last.typ, 'Nicht gefunden'); assert.strictEqual(a.last.tage, 3); assert.strictEqual(a.streak, 2);
+  assert.strictEqual(a.lastFound, now - 20 * 86400000);
+  assert.ok(/Schwierigkeit 2, Gelände 1,5\. Dose klein\. Letzter Log: Nicht gefunden, vor 3 Tagen\. Achtung, 2 mal/.test(a.sprache), a.sprache);
+  const b = A.arrivalInfo({ d: 1, t: 1, size: '', logs: [] }, now);
+  assert.strictEqual(b.last, null); assert.ok(/Keine Logs gespeichert/.test(b.sprache));
+});
 t('Ansage-Stufen', () => {
   assert.strictEqual(A.annStepBelow(730), 500); assert.strictEqual(A.annStepBelow(100), 50); assert.strictEqual(A.annStepBelow(9), null); assert.strictEqual(A.annStepBelow(5000), 2000);
 });

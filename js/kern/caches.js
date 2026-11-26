@@ -153,4 +153,24 @@ function nearestOsm(els, key, value, lat, lon) {
   return best;
 }
 
-export { TYPE_INFO, normType, normSize, LOGTYPES, logTypeInfo, dnfStreak, lastFound, FN_TYPES, fieldNoteLine, utf16le, sniffFormat, importCgeo, nearestOsm };
+/* Ankunft in der Zielzone: D/T, Dosengröße und Stand der Logs auf einen Blick (Logs neueste zuerst) */
+function arrivalInfo(c, now) {
+  now = now || Date.now();
+  const num = v => (v == null || v === '' ? '?' : String(v).replace('.', ','));
+  const size = normSize(c.size);
+  const logs = c.logs || [], l = logs[0] || null;
+  let last = null;
+  if (l) {
+    const [typ, kind] = logTypeInfo(l.type), tage = l.date ? Math.max(0, Math.floor((now - l.date) / 86400000)) : null;
+    last = { typ, kind, date: l.date || null, author: l.author || '', tage };
+  }
+  const streak = dnfStreak(logs), lf = lastFound(logs);
+  const vor = d => (d == null ? '' : d === 0 ? 'heute' : d === 1 ? 'gestern' : `vor ${d} Tagen`);
+  const groesse = { Nano: 'Nano', Micro: 'Mikro', Small: 'klein', Normal: 'normal', 'Groß': 'groß', 'Sehr groß': 'sehr groß', Virtuell: 'virtuell', 'Keine Dose': 'keine Dose' }[size] || size;
+  const sprache = ['Zielzone.', `Schwierigkeit ${num(c.d)}, Gelände ${num(c.t)}.`, size ? `Dose ${groesse}.` : '',
+    last ? `Letzter Log: ${last.typ}${last.tage != null ? ', ' + vor(last.tage) : ''}.` : 'Keine Logs gespeichert.',
+    streak >= 2 ? `Achtung, ${streak} mal nicht gefunden in Folge.` : ''].filter(Boolean).join(' ');
+  return { dt: `D${num(c.d)} / T${num(c.t)}`, size, last, vorText: last ? vor(last.tage) : '', streak, lastFound: lf, sprache };
+}
+
+export { TYPE_INFO, normType, normSize, LOGTYPES, logTypeInfo, dnfStreak, lastFound, FN_TYPES, fieldNoteLine, utf16le, sniffFormat, importCgeo, nearestOsm, arrivalInfo };

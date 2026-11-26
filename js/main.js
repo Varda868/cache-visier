@@ -12,6 +12,7 @@ import { applyNight, onCamTap, toggleNight } from './ui/nacht.js';
 import { startGps, startOrientation } from './ui/sensoren.js';
 import { initTalk, showTalk } from './ui/talk.js';
 import { renderTop, toggleRouting } from './ui/ziel-routing.js';
+import './ui/ankunft.js';
 import './ui/ansagen.js';
 import './ui/anzeige.js';
 import './ui/basis.js';
