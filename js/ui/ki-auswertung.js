@@ -1,6 +1,7 @@
 import { TYPE_INFO, logTypeInfo, nearestOsm } from '../kern/caches.js';
 import { D2R, compassName, destPoint, esc, fmtDate, haversine, htmlText } from '../kern/geo.js';
 import { KIA, S, idbPut, openSheet, run, toast } from './basis.js';
+import { cacheTabs } from './blaetter.js';
 import { drawCacheMarkers } from './karte.js';
 import { showFotoFrage, showMulti } from './multi.js';
 import { curCache, setTarget } from './ziel-routing.js';
@@ -87,7 +88,7 @@ function beleg(x) {
   const meta = [isoDe(x.datum), x.log_nr ? 'Log ' + x.log_nr : ''].filter(Boolean).join(' · ');
   return `<q data-l="${x.log_nr || 0}">${esc(x.zitat || '')}${meta ? ` <small>(${esc(meta)})</small>` : ''}</q><div class="full" hidden></div>`;
 }
-function showAi() {
+function aiSheet() {
   const c = curCache(); if (!c) return toast('Kein Cache als Ziel');
   const a = S.ai.get(c.geocode);
   let body;
@@ -124,4 +125,5 @@ function showAi() {
   });
 }
 
+function showAi() { if (!curCache()) return toast('Kein Cache als Ziel'); aiSheet(); cacheTabs('ki'); }
 export { osmAround, resolveZones, kiAnbieter, kiZiel, kiCall, aiAnalyze, aiAll, ZUSTAND, KAT, isoDe, beleg, showAi };

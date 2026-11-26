@@ -51,7 +51,6 @@ function showSettings() {
     ${ATTRS.filter(a => a[3] && !GEAR.some(g => g[0] === a[0])).map(a => chk('gear_' + a[0], a[1] + ' ' + a[2].replace(/ nötig$/, ''))).join('')}
     ${chk('skipGear', '„Gefunden & weiter“ überspringt Caches, für die Ausrüstung fehlt')}
     <h4>Routing (Valhalla)</h4>
-    ${f('routeUrl', 'Routing-Adresse: ./api/route.php (über deinen Server) oder direkt https://…/ (Valhalla mit HTTPS)')}
     <label class="f"><span>Unterwegs</span><select data-k="routeCosting"><option value="pedestrian">zu Fuß</option><option value="bicycle">Fahrrad</option><option value="motor_scooter">Roller</option><option value="auto">Auto</option></select></label>
     ${f('lookahead', 'Markierung so weit voraus auf dem Weg (m)', 'number', 'min="10" max="80" step="5"')}
     <h4>Daten</h4>
@@ -120,7 +119,7 @@ function showSettings() {
         if (k === 'night') applyNight();
         if (k === 'kiMode') kiWeg();
         if (/^talk(On|Pw|Cache|Relays)$/.test(k)) { clearTimeout(S.talkT); S.talkT = setTimeout(() => run(initTalk), 800); }
-        if ((k === 'routeUrl' || k === 'routeCosting') && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
+        if (k === 'routeCosting' && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }
       };
     });
   });

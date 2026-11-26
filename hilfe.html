@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>CacheVisier – Hilfe</title>
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { --bg: #0b0f14; --fg: #f2f5f7; --mut: #9aa7b2; --acc: #ffdc00; --line: rgba(255,255,255,.14); --ok: #2ecc40; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 24px; margin: 4px 0 2px; }
+  h2 { font-size: 19px; margin: 30px 0 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--acc); }
+  h3 { font-size: 16px; margin: 16px 0 4px; }
+  p, li { color: #dfe5ea; }
+  .sub { color: var(--mut); font-size: 14px; }
+  a { color: #8fc1ff; }
+  nav.inhalt { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 4px; }
+  nav.inhalt a { text-decoration: none; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; color: var(--fg); background: rgba(255,255,255,.05); }
+  kbd, .k { display: inline-block; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.07); font: inherit; font-size: 14px; white-space: nowrap; }
+  ol, ul { padding-left: 22px; }
+  li { margin: 3px 0; }
+  .tipp { border-left: 3px solid var(--ok); padding: 6px 10px; background: rgba(46,204,64,.08); border-radius: 0 8px 8px 0; }
+  .achtung { border-left: 3px solid #ff9f1a; padding: 6px 10px; background: rgba(255,159,26,.08); border-radius: 0 8px 8px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  td { border-top: 1px solid var(--line); padding: 6px 4px; vertical-align: top; }
+  td:first-child { white-space: nowrap; width: 1%; padding-right: 10px; }
+  .top { position: fixed; right: 12px; bottom: 14px; text-decoration: none; background: #1b2430; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; color: var(--fg); }
+</style>
+</head>
+<body>
+<main>
+<h1>CacheVisier – Hilfe</h1>
+<p class="sub">Geocaching vor Ort: Handy senkrecht = Kamera mit Fadenkreuz, flach = Karte. Alles läuft im Handy, ohne eigenen Server.</p>
+
+<nav class="inhalt">
+  <a href="#start">Erste Schritte</a><a href="#caches">Caches laden</a><a href="#kamera">Kamera &amp; Karte</a><a href="#ziel">Ziel &amp; Weg</a>
+  <a href="#cache">Hint, Logs, KI</a><a href="#ki">KI-Schlüssel</a><a href="#multi">Multis</a><a href="#nacht">Nachtcaches</a>
+  <a href="#peilung">Peilung</a><a href="#tour">Tour</a><a href="#offline">Offline</a><a href="#talk">b:con talk</a>
+  <a href="#sicherung">Sicherung</a><a href="#probleme">Probleme</a><a href="#daten">Datenschutz</a>
+</nav>
+
+<h2 id="start">Erste Schritte</h2>
+<ol>
+  <li><b>Installieren:</b> <span class="k">cache-visier.dns.navy</span> in Chrome öffnen, Menü ⋮ → „Zum Startbildschirm hinzufügen“.</li>
+  <li><b>Starten:</b> ▶ Starten antippen und <b>Kamera, Standort und Bewegungssensoren erlauben</b>. Ohne Bewegungssensoren gibt es keinen Kompass.</li>
+  <li><b>Ersteinrichtung:</b> Beim ersten Start führt die App in drei Schritten durch: Berechtigungen prüfen, Caches laden, optional einen KI-Schlüssel eintragen. Später erneut über ☰ → ❓ Hilfe → „Ersteinrichtung“.</li>
+  <li><b>Ziel wählen:</b> ☰ öffnet die Cache-Liste, nach Entfernung sortiert. Antippen = Ziel.</li>
+</ol>
+<p class="tipp">Steht in den Einstellungen unten „Stand …“, siehst du, welche Fassung läuft. Updates kommen beim nächsten Öffnen der App.</p>
+
+<h2 id="caches">Caches laden</h2>
+<h3>Aus c:geo (empfohlen)</h3>
+<ol>
+  <li>In c:geo die gewünschten Caches <b>mit Logs offline speichern</b>.</li>
+  <li>In c:geo eine Sicherung (Backup) anlegen. <b>Zugangsdaten bzw. Kontodaten dabei nicht mitsichern.</b></li>
+  <li>In CacheVisier ☰ → <span class="k">📁 c:geo-Backup laden</span> und einmal den Ordner <span class="k">cgeo</span> wählen. Die App nimmt automatisch die neueste Datenbank.</li>
+  <li>Kann der Browser keine Ordner öffnen: <span class="k">📄 Datei wählen</span> und <span class="k">cgeo/backup/&lt;Datum&gt;/cgeo.sqlite</span> nehmen.</li>
+</ol>
+<p class="sub">c:geo hält seine Live-Datenbank geschützt, deshalb der Weg über die Sicherung. Jeder lädt dabei nur seine eigenen Caches; die Datei bleibt im Handy.</p>
+<h3>GPX und „Teilen“</h3>
+<p>GPX-Dateien über <span class="k">📄 Datei wählen</span> oder aus einer anderen App per „Teilen“ → CacheVisier. Wegpunktdateien werden über den Cache-Code zugeordnet.</p>
+<h3>Opencaching</h3>
+<ol>
+  <li>Auf <a href="https://www.opencaching.de/okapi/signup.html" target="_blank" rel="noopener">opencaching.de/okapi/signup.html</a> einen Schlüssel holen. Eingetragen wird der <b>Consumer Key</b>, nicht das Secret.</li>
+  <li>☰ → ⚙️ Einstellungen → Opencaching: Schlüssel und optional deinen OC-Benutzernamen eintragen (dann bleiben gefundene Caches weg).</li>
+  <li>☰ → <span class="k">🟢 OC in der Nähe</span> lädt Caches im eingestellten Umkreis samt Hint, Logs und Wegpunkten.</li>
+</ol>
+<p class="sub">„Logs pro Cache“ (Einstellungen → Daten) gilt beim nächsten Laden. Mehr Logs, als die Quelle hat, kommen nicht an.</p>
+
+<h2 id="kamera">Kamera &amp; Karte</h2>
+<ul>
+  <li><b>Senkrecht halten</b> wie ein Fernglas: Kamerabild mit Fadenkreuz. Die Markierung sitzt über dem Ziel, das Fadenkreuz wird grün, wenn das Ziel in der Mitte liegt. Liegt es außerhalb, zeigt ein Pfeil am Rand die Richtung.</li>
+  <li><b>Flach halten:</b> Karte mit dir, Ziel, Wegpunkten und KI-Suchzonen.</li>
+  <li><span class="k">🔄</span> unten wechselt: automatisch → Kamera fest → Karte fest.</li>
+  <li><b>Nahbereich:</b> Ist das Ziel näher als etwa die GPS-Ungenauigkeit, sagen Pfeil und Markierung nichts mehr aus. Dann zählen Hint und Logs.</li>
+  <li><b>Kalibrieren</b> (⚙️ → Anzeige): „Bildwinkel“ so einstellen, dass die Markierung auf einem bekannten, entfernten Punkt sitzt; „Kompass-Korrektur“, wenn die Richtung dauerhaft schief ist.</li>
+</ul>
+<table>
+  <tr><td>🔦 Lampe</td><td>Licht an/aus (geht nur, wenn Handy und Browser es erlauben).</td></tr>
+  <tr><td>📸 Foto</td><td>Foto zum Ziel speichern, im Handy, nicht in der Galerie.</td></tr>
+  <tr><td>ℹ️ Cache</td><td>Hint, Logs und KI in drei Reitern.</td></tr>
+  <tr><td>✍️ Log</td><td>Offline-Log mit Typ, Text und Fotos; Export als Feldnotizen.</td></tr>
+</table>
+
+<h2 id="ziel">Ziel &amp; Weg</h2>
+<ul>
+  <li><b>Wegpunkte</b> im Reiter Hint antippen = als Ziel nehmen.</li>
+  <li><span class="k">🧭</span> oben schaltet das <b>Routing</b> ein (über den öffentlichen FOSSGIS-Server, gedrosselt). Art des Weges: ⚙️ → Routing.</li>
+  <li><b>Ansagen und Vibration</b> bei 2 km, 1 km, 500, 200, 100, 50, 20 und 10 m und an Abzweigungen (⚙️ → Unterwegs).</li>
+  <li><b>Zielzone:</b> Beim ersten Erreichen von 25 m um Cache oder Final zeigt eine Karte D/T, Dosengröße und den letzten Log, mit Knöpfen zu Hint und Logs. Am Startpunkt von Multis und ungelösten Mysterys kommt sie nicht.</li>
+</ul>
+
+<h2 id="cache">Hint, Logs, KI</h2>
+<p><span class="k">ℹ️ Cache</span> unten öffnet ein Blatt mit drei Reitern:</p>
+<ul>
+  <li><b>💡 Hint:</b> zuerst verdeckt, <span class="k">👁 Anzeigen</span> zeigt ihn, <span class="k">🔤 ROT13</span> entschlüsselt. Dazu Wegpunkte und Infos.</li>
+  <li><b>📜 Logs:</b> farbig nach Typ, mit „nicht gefunden in Folge“ seit dem letzten Fund.</li>
+  <li><b>🤖 KI:</b> Auswertung der Logs: Kurzfassung, Zustand, Suchhilfe mit Zitat und Lognummer, Warnungen, Suchzonen auf der Karte.</li>
+</ul>
+
+<h2 id="ki">KI mit eigenem Schlüssel</h2>
+<p>Die KI nutzt <b>deinen eigenen Schlüssel</b>. Er bleibt im Handy und geht direkt an den Anbieter.</p>
+<ol>
+  <li>Schlüssel holen, am einfachsten bei Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (kostenlose Stufe, versteht auch Fotos).</li>
+  <li>☰ → ⚙️ → KI-Auswertung → bei Gemini einfügen → <span class="k">Prüfen und Modelle laden</span>. Das kostet nichts.</li>
+  <li>Weitere Anbieter (Groq, OpenRouter, Mistral, OpenAI, Claude) sind möglich; bei Ausfall oder Limit springt die App zum nächsten.</li>
+</ol>
+<p class="achtung">Beim Auswerten gehen Listing- und Logtexte an den gewählten Anbieter. Bedingungen und kostenlose Kontingente ändern sich – beim Anbieter nachsehen.</p>
+
+<h2 id="multi">Multis</h2>
+<ol>
+  <li>Reiter KI → <span class="k">🧩 Stationen</span>: Die KI liest Stationen, Aufgaben, Variablen und die Finalformel aus dem Listing.</li>
+  <li>Die nächste Station erscheint oben als Kärtchen mit Aufgabe und Ziel.</li>
+  <li>Werte eintragen oder <span class="k">📸 Foto → KI</span>: Die KI liest Zahlen ab oder zählt (z. B. Zaunlatten) und begründet das Ergebnis.</li>
+  <li>Sind alle Werte da, rechnet die App das Final aus. Immer mit Logs und Checker vergleichen.</li>
+</ol>
+
+<h2 id="nacht">Nachtcaches</h2>
+<ul>
+  <li><span class="k">🌙</span> oben: rote Anzeige im Kamerabild (die Karte bleibt normal) und Reflektorsuche. Lampe an.</li>
+  <li>Reflektoren werden mit Ringen in ihrer echten Farbe markiert; dicht beieinander zählt als einer.</li>
+  <li><b>Reflektor antippen</b> = Richtung als Peilung übernehmen, Peilstrahl auf der Karte.</li>
+</ul>
+
+<h2 id="peilung">Peilung / Projektion</h2>
+<p>☰ → ⋯ Mehr → <span class="k">📐 Peilung</span>: von dir, vom Ziel oder von Koordinaten aus Entfernung (Meter, Schritte, Fuß) und Richtung eingeben; „Kompasswert“ rechnet die Missweisung dazu. Oder <span class="k">📷 Mit der Kamera peilen</span>.</p>
+
+<h2 id="tour">Tour „Gefunden &amp; weiter“</h2>
+<p>☰ → <span class="k">🗺️ Tour</span> plant eine Runde durch die ungefundenen Caches in der Nähe. Nach dem Fund im Log-Blatt <span class="k">✅ Gefunden &amp; weiter</span> → nächster Cache. Übersprungen werden ungelöste Mysterys und Caches, für die laut ⚙️ → Meine Ausrüstung etwas fehlt.</p>
+
+<h2 id="offline">Offline</h2>
+<ul>
+  <li>☰ → ⋯ Mehr → <span class="k">📦 Offline</span>: Caches, KI-Auswertung und Stationen um dich herum vorbereiten.</li>
+  <li>Kartenkacheln: offline da ist, was du einmal angesehen hast (die OSM-Regeln verbieten das Vorabladen).</li>
+  <li>Offline-Logs mit ✍️, später als <span class="k">geocache_visits.txt</span> exportieren oder Text kopieren.</li>
+</ul>
+
+<h2 id="talk">b:con talk &amp; Sprechfunk</h2>
+<ul>
+  <li>⚙️ → b:con talk einschalten, Rufname setzen. Alle, die denselben Cache als Ziel haben, sind im selben Kanal; optional ein Team-Kanal mit Passwort.</li>
+  <li>💬 oben: Nachrichten, Standort, „Gefunden“, „Hilfe“.</li>
+  <li><b>Sprechfunk:</b> schwebender 🎙️-Knopf gedrückt halten (bis 30 s). Eingehende Durchsagen spielen ab.</li>
+  <li><b>Live-Position</b> (Standard aus): alle 30 s an Team- bzw. Cache-Kanal. Den Cache-Kanal kann jeder lesen, der den Code kennt.</li>
+</ul>
+<p class="sub">Über öffentliche Nostr-Relays, verschlüsselt, verfällt nach 24 h. Kein Notrufsystem.</p>
+
+<h2 id="sicherung">Sicherung</h2>
+<p>☰ → ⋯ Mehr → <span class="k">💾 Sicherung</span>: Einstellungen, eigene Logs und Fotos, Multi-Stände und KI-Auswertungen als Datei speichern, auf Wunsch auch Schlüssel und Caches. Mit „Sicherung laden“ auf einem anderen Handy oder nach dem Neuinstallieren zurückholen.</p>
+<p class="achtung">Enthält die Datei Schlüssel (KI, Opencaching, b:con), gut aufbewahren und nicht weitergeben.</p>
+
+<h2 id="probleme">Probleme</h2>
+<table>
+  <tr><td>📡 GPS ungenau</td><td>Oben erscheint ein Hinweis ab ±20 m. Kurz warten, freier Himmel hilft; in Häuserschluchten und Wald liegt GPS oft daneben.</td></tr>
+  <tr><td>🧭 Kompass</td><td>Hinweis bei fehlendem, hängendem oder vom Laufweg abweichendem Kompass: Handy in Form einer 8 schwenken, Abstand zu Autos, Geländern, Stahl halten.</td></tr>
+  <tr><td>Kein Kompass</td><td>Bewegungssensoren für die Seite erlauben (Schloss-Symbol in der Adresszeile → Berechtigungen).</td></tr>
+  <tr><td>Lampe geht nicht</td><td>Nicht jedes Handy erlaubt das Licht über den Browser. ☰ → ⋯ Mehr → 🩺 Diagnose zeigt es.</td></tr>
+  <tr><td>Alte Fassung</td><td>App aus der Liste der offenen Apps wischen und neu öffnen; „Stand“ in den Einstellungen prüfen.</td></tr>
+  <tr><td>Fehler melden</td><td><a href="https://github.com/Varda868/cache-visier/issues" target="_blank" rel="noopener">GitHub → Issues</a>, am besten mit dem Text aus 🩺 Diagnose.</td></tr>
+</table>
+
+<h2 id="daten">Datenschutz</h2>
+<p>Caches, Einstellungen, Schlüssel, Logs und Fotos liegen nur im Handy. Ins Netz geht nur, was eine Funktion braucht:</p>
+<ul>
+  <li>KI-Auswertung → der eingetragene KI-Anbieter (Listing- und Logtexte, ggf. Foto)</li>
+  <li>Opencaching laden → opencaching.de (Standort, Umkreis, Schlüssel, ggf. dein OC-Benutzername)</li>
+  <li>Routing → FOSSGIS-Valhalla (Start und Ziel)</li>
+  <li>Karte → OpenStreetMap-Kacheln; Suchzonen → OpenStreetMap-API (Umgebung des Caches)</li>
+  <li>b:con talk → öffentliche Nostr-Relays (verschlüsselt)</li>
+</ul>
+<p class="sub">CacheVisier ist freie Software (AGPL-3.0). Quellcode: <a href="https://github.com/Varda868/cache-visier" target="_blank" rel="noopener">github.com/Varda868/cache-visier</a></p>
+</main>
+<a class="top" href="#">↑ nach oben</a>
+</body>
+</html>

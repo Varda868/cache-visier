@@ -24,7 +24,7 @@ async def main():
         print('Liste:', rows)
         await pg.click('li.row[data-g="GC1"]'); await pg.wait_for_timeout(300)
         print('Kopfzeile:', await pg.text_content('#tSub'))
-        await pg.click('#bHint'); await pg.wait_for_timeout(200)
+        await pg.click('#bCache'); await pg.click('[data-tab="info"]'); await pg.wait_for_timeout(200)
         print('Info:', ' '.join((await pg.text_content('#sheetBody')).split())[:200]); await pg.click('#sheetClose')
         # Ansagen: 133 m → Stufe 100 m bei Annäherung
         await ctx.set_geolocation({'latitude': 48.37032, 'longitude': 10.8700, 'accuracy': 5}); await pg.wait_for_timeout(1200)

@@ -167,6 +167,40 @@ t('Ankunft in der Zielzone: D/T, Größe, letzter Log', () => {
   const b = A.arrivalInfo({ d: 1, t: 1, size: '', logs: [] }, now);
   assert.strictEqual(b.last, null); assert.ok(/Keine Logs gespeichert/.test(b.sprache));
 });
+t('Warnungen: GPS, Kompass, Abweichung zur Laufrichtung', () => {
+  const st0 = () => ({ now: 0, startTs: 0, pos: null, cam: true, oriTs: 0, head: null });
+  let z = { ...st0(), now: 10000 }; assert.strictEqual(A.warnState(z), null);
+  z = { ...st0(), now: 16000 }; assert.strictEqual(A.warnState(z).kind, 'nogps');
+  // GPS ±30 m: erst nach 3 s, weg erst unter ±15 m
+  const st = {}; const w = (now, acc, extra = {}) => A.warnState(Object.assign({ now, startTs: 0, pos: { acc, speed: 0, heading: null, ts: now }, cam: false, oriTs: now, head: null, st }, extra));
+  assert.strictEqual(w(1000, 30), null); assert.strictEqual(w(4500, 30).kind, 'gps');
+  assert.strictEqual(w(5000, 18).kind, 'gps'); assert.strictEqual(w(5500, 12), null);
+  // Kompass fehlt / hängt nur in der Kamera
+  assert.strictEqual(A.warnState({ now: 6000, startTs: 0, pos: { acc: 5 }, cam: true, oriTs: 0, head: null }).kind, 'nocompass');
+  assert.strictEqual(A.warnState({ now: 9000, startTs: 0, pos: { acc: 5 }, cam: true, oriTs: 5000, head: 10 }).kind, 'stale');
+  assert.strictEqual(A.warnState({ now: 9000, startTs: 0, pos: { acc: 5 }, cam: false, oriTs: 0, head: null }), null);
+  // Laufen nach Norden, Kompass zeigt ~60° daneben -> Warnung nach 6 Messungen; stimmt er wieder, verschwindet sie
+  const s2 = {}; let r;
+  for (let i = 0; i < 6; i++) r = A.warnState({ now: 1000 * i, startTs: 0, pos: { acc: 5, speed: 1.5, heading: 2, ts: i }, cam: true, oriTs: 1000 * i, head: 62, st: s2 });
+  assert.strictEqual(r.kind, 'dev'); assert.ok(/~60°/.test(r.text));
+  for (let i = 6; i < 20; i++) r = A.warnState({ now: 1000 * i, startTs: 0, pos: { acc: 5, speed: 1.5, heading: 2, ts: i }, cam: true, oriTs: 1000 * i, head: 5, st: s2 });
+  assert.strictEqual(r, null);
+  // Stehen: keine Aussage über den Kompass
+  const s3 = {}; for (let i = 0; i < 10; i++) r = A.warnState({ now: 1000 * i, startTs: 0, pos: { acc: 5, speed: 0, heading: null, ts: i }, cam: true, oriTs: 1000 * i, head: 90, st: s3 });
+  assert.strictEqual(r, null);
+});
+t('Sicherung: Schlüssel nur auf Wunsch, Zusammenführen, keine doppelten Logs', () => {
+  const set = { fovH: 50, kiKey_gemini: 'G', okapiKey: 'O', talkPw: 'T', apiToken: 'A', talkName: 'PFERSEE' };
+  assert.deepStrictEqual(A.settingsFuerSicherung(set, false), { fovH: 50, talkName: 'PFERSEE' });
+  assert.strictEqual(A.settingsFuerSicherung(set, true).kiKey_gemini, 'G');
+  const z = A.settingsZusammen({ fovH: 60, kiKey_gemini: 'NEU', okapiKey: '' }, { fovH: 50, talkName: 'X' });
+  assert.strictEqual(z.fovH, 50); assert.strictEqual(z.kiKey_gemini, 'NEU'); assert.strictEqual(z.setupDone, true);
+  assert.strictEqual(A.settingsZusammen({ kiKey_gemini: 'ALT' }, { kiKey_gemini: 'DATEI' }).kiKey_gemini, 'DATEI');
+  const alt = [{ geocode: 'GC1', ts: 1, text: 'a' }], imp = [{ geocode: 'GC1', ts: 1, text: 'a' }, { geocode: 'GC2', ts: 2, text: 'b' }, { ts: 3 }];
+  assert.deepStrictEqual(A.neueLogs(alt, imp).map(l => l.geocode), ['GC2']);
+  assert.throws(() => A.pruefeSicherung({ app: 'X' }), /Keine CacheVisier-Sicherung/);
+  assert.strictEqual(A.pruefeSicherung({ app: 'CacheVisier', format: 1, meta: [['a', 1]] }).meta.length, 1);
+});
 t('Ansage-Stufen', () => {
   assert.strictEqual(A.annStepBelow(730), 500); assert.strictEqual(A.annStepBelow(100), 50); assert.strictEqual(A.annStepBelow(9), null); assert.strictEqual(A.annStepBelow(5000), 2000);
 });

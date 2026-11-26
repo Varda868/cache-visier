@@ -1,6 +1,7 @@
 # CacheVisier 0.2
 
 **App:** https://cache-visier.dns.navy · im Handy-Chrome öffnen, dann „Zum Startbildschirm hinzufügen“.
+**Hilfe:** https://cache-visier.dns.navy/hilfe.html (auch in der App unter ☰ → ❓ Hilfe)
 
 PWA zum Cachen vor Ort. Läuft ohne eigenen Server: Jeder lädt seine Caches aus seinem eigenen c:geo-Backup (oder GPX/Opencaching) und nutzt für die KI seinen eigenen Schlüssel. Alles bleibt auf dem eigenen Handy.
 - **Handy senkrecht:** Kamerabild mit Fadenkreuz, Markierung über dem Ziel, Abstand und Richtung.
@@ -192,12 +193,7 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
   - Auf der Karte erscheint die Route blau.
   - Auf den letzten 30–40 m schaltet die App auf Luftlinie zum Ziel um. Die Route endet am nächsten Weg, der Cache liegt oft daneben.
   - Liegst du zweimal hintereinander mehr als 30 m neben der Route, berechnet die App sie neu (höchstens alle 20 s).
-- **Adresse** (⚙️ → Routing):
-  - `./api/route.php` (Standard): Dein Server leitet weiter, ohne Einstellung an das öffentliche FOSSGIS-Valhalla (`https://valhalla1.openstreetmap.de`). Das Skript prüft das Token, leitet nur `/route` mit geprüften Werten weiter und schickt einen eigenen User-Agent.
-    - **Drossel für FOSSGIS** (kein Dauerbetrieb): höchstens 12 Routen pro Minute und 400 pro Tag (`ROUTE_PER_MINUTE`, `ROUTE_PER_DAY`).
-    - Die App wartet beim Zielwechsel 1,5 s, damit schnelles Durchklicken nur eine Anfrage auslöst. Abseits der Route rechnet sie höchstens alle 20 s neu.
-    - **Eigener Valhalla-Server später:** `const VALHALLA_URL = 'http://…:8002';` in `config.php`.
-  - Oder direkt die Valhalla-Adresse (`https://…/`). Das geht nur, wenn Valhalla über HTTPS erreichbar ist. Die App fragt dann per GET `…/route?json=…`, ohne Preflight.
+- **Weg:** immer direkt zum öffentlichen FOSSGIS-Valhalla (`https://valhalla1.openstreetmap.de`) per GET `…/route?json=…`, ohne eigenen Server. Rücksicht auf FOSSGIS (kein Dauerbetrieb): beim Zielwechsel 1,5 s warten, abseits der Route höchstens alle 20 s neu. `api/route.php` bleibt nur für den Betrieb auf einem eigenen Server im Repo und wird von der App nicht mehr benutzt.
 - **Fortbewegung:** zu Fuß, Fahrrad, Roller oder Auto. Die Anweisungen kommen auf Deutsch von Valhalla.
 
 ## Bedienung
@@ -209,16 +205,20 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 | 🔄 | Auto (senkrecht = Kamera, flach = Karte) → Kamera fest → Karte fest |
 | 🔦 | Lampe an/aus. Geht nur, wenn Handy und Browser das Licht über die Kamera schalten lassen (Diagnose zeigt es). |
 | 📸 | Foto zum aktuellen Ziel speichern, im Handy, nicht in der Galerie |
-| 💡 | Cache-Infos, Hint, Wegpunkte (antippen = Ziel) |
-| 📜 | Logs, farbig nach Typ, mit DNF-Serie seit dem letzten Fund |
-| 🤖 | KI-Auswertung, Suchzonen als Ziel |
+| ℹ️ Cache | ein Blatt mit drei Reitern: 💡 Hint (Infos, Hint, Wegpunkte; antippen = Ziel), 📜 Logs (farbig nach Typ, DNF-Serie), 🤖 KI (Auswertung, Suchzonen) |
 | ✍️ | Offline-Log mit Typ, Text und Fotos; Export als `geocache_visits.txt` |
 
 - **Fadenkreuz:** Es wird grün, wenn das Ziel in der Bildmitte liegt.
 - **Rand-Pfeil:** Liegt das Ziel außerhalb des Bildes, zeigt ein Pfeil am Rand die Richtung.
 - **Nahbereich:** Unter etwa dem 1,3-fachen der GPS-Genauigkeit erscheint „Nahbereich“. Dort sagen Pfeil und Markierung nichts mehr aus, dann zählen Hint und Logs.
 
-**Menü ☰:** oben Caches laden (c:geo-Backup, Datei, Opencaching), 🗺️ Tour und ⚙️ Einstellungen. Unter „⋯ Mehr“: 🤖 Alle auswerten, 📐 Peilung, 📦 Offline, 🩺 Diagnose. Die Einstellungen sind in Gruppen zum Aufklappen sortiert, die wichtigsten zuerst (KI, Unterwegs, Anzeige, Ausrüstung).
+**Menü ☰:** oben Caches laden (c:geo-Backup, Datei, Opencaching), 🗺️ Tour, ⚙️ Einstellungen und ❓ Hilfe. Unter „⋯ Mehr“: 🤖 Alle auswerten, 📐 Peilung, 📦 Offline, 💾 Sicherung, 🩺 Diagnose.
+
+**Erster Start:** Ersteinrichtung in drei Schritten (Berechtigungen, Caches laden, KI-Schlüssel), überspringbar; erneut über ❓ Hilfe. Wer schon Caches geladen hat, sieht sie nicht.
+
+**Warnhinweise** oben im Bild: GPS ungenauer als ±20 m (ab 3 s, weg unter ±15 m), kein Kompass oder Kompass hängt (in der Kamera), Kompass weicht beim Gehen dauerhaft mehr als 40° von der GPS-Laufrichtung ab ("Handy in Form einer 8 schwenken"). Antippen blendet die Warnung 2 min aus.
+
+**💾 Sicherung:** Einstellungen, eigene Logs und Fotos, Multi-Stände, Tour und KI-Auswertungen als JSON-Datei; Schlüssel und Caches nur auf Wunsch. Laden ergänzt Logs ohne Doppelte, Fotos behalten ihre Zuordnung. Die Einstellungen sind in Gruppen zum Aufklappen sortiert, die wichtigsten zuerst (KI, Unterwegs, Anzeige, Ausrüstung).
 
 **Kalibrieren** (⚙️ Einstellungen):
 - „Bildwinkel“ so einstellen, dass die Markierung bei einem bekannten, entfernten Punkt auf dem Punkt sitzt.

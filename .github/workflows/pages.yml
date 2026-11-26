@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site/vendor/leaflet _site/vendor/sqljs
-          cp -r index.html style.css js nostr.js ki.js sw.js manifest.webmanifest icon-*.png bcon LICENSE _site/
+          cp -r index.html hilfe.html style.css js nostr.js ki.js sw.js manifest.webmanifest icon-*.png bcon LICENSE _site/
           cd "$RUNNER_TEMP"
           npm pack leaflet@1.9.4 sql.js@1.10.3 --silent
           tar -xzf leaflet-1.9.4.tgz

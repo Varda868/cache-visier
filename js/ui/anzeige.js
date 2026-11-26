@@ -1,5 +1,6 @@
 import { D2R, bearing, compassName, fmtDist, haversine, projectToScreen, screenCols, viewHeading, wrap180 } from '../kern/geo.js';
 import { checkArrival } from './ankunft.js';
+import { checkWarnings } from './warnungen.js';
 import { announce, buzz } from './ansagen.js';
 import { $, S } from './basis.js';
 import { updateMap } from './karte.js';
@@ -15,6 +16,7 @@ function frame(now) {
   const sc = S.cols ? screenCols(S.cols, ang) : null;
   const head = sc ? (viewHeading(sc) + S.set.compassOffset + 360) % 360 : (p && p.heading != null && p.speed > 0.7 ? p.heading : null);
   const stale = S.cols && now - S.oriTs > 3000;
+  checkWarnings(now, head);
   $('#status').textContent = `${navigator.onLine ? '' : '📴 offline · '}${S.cols ? (stale ? '⚠️ Kompass hängt' : S.oriSrc) : 'Kompass: fehlt'} · GPS ${p ? '±' + Math.round(p.acc) + ' m' : 'wartet …'}`;
   if (!t || !p) {
     $('#dist').textContent = p ? '–' : 'GPS …'; $('#acc').textContent = ''; $('#dir').textContent = t ? '' : 'Kein Ziel';

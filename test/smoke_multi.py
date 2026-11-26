@@ -43,7 +43,7 @@ async def main():
         await pg.click('#mFin'); await pg.wait_for_timeout(300)
         print('Ziel:', await pg.text_content('#tName'), '| Kärtchen:', ' '.join((await pg.text_content('#stage')).split())[:90])
         # Freie Foto-Frage
-        await pg.click('#bAi'); await pg.click('#aAsk'); await pg.wait_for_timeout(200)
+        await pg.click('#bCache'); await pg.click('[data-tab="ki"]'); await pg.click('#aAsk'); await pg.wait_for_timeout(200)
         await pg.fill('#fq', 'Wie viele Latten hat der Zaun?')
         async with pg.expect_file_chooser() as fc:
             await pg.click('#fGal')

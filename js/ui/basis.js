@@ -15,8 +15,8 @@ const DEFAULTS = {
   gear_flashlight: true, gear_uv: false, gear_pen: true, gear_tweezers: true, gear_magnet: false, gear_mirror: false, gear_gloves: true,
   gear_special_tool: false, gear_water: false, gear_measure: false, gear_ladder: false, gear_pole: false, gear_wading: false,
   gear_tree_climbing: false, gear_climbing_gear: false, gear_climbing: false, gear_boat: false, gear_scuba: false, gear_swimming: false,
-  tourRadius: 2000, tourLoop: false,
-  routing: false, routeUrl: 'https://valhalla1.openstreetmap.de', routeCosting: 'pedestrian', lookahead: 25
+  tourRadius: 2000, tourLoop: false, setupDone: false,
+  routing: false, routeCosting: 'pedestrian', lookahead: 25
 };
 const S = {
   set: { ...DEFAULTS }, caches: new Map(), ai: new Map(), multi: new Map(), stageMin: false,

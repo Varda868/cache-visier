@@ -26,7 +26,7 @@ async def main():
         print('20 m:', await pg.is_visible('#arrive'), '|', ' '.join((await pg.text_content('#arrive')).split()))
         print('Ansage:', [t for t in await pg.evaluate('_said') if 'Zielzone' in t])
         await pg.screenshot(path='test/shot-ankunft.png')
-        await pg.click('#arrive [data-a="zu"]'); await pg.wait_for_timeout(500)
+        await pg.click('#arrive [data-a="hint"]'); await pg.wait_for_timeout(300); print('Hint-Knopf öffnet:', await pg.text_content('#sheetTitle'), '| Reiter:', await pg.eval_on_selector_all('.tabs button.on', 'e => e.map(x => x.textContent)')); await pg.click('#sheetClose'); await pg.wait_for_timeout(500)
         await ctx.set_geolocation(at(60)); await pg.wait_for_timeout(500); await ctx.set_geolocation(at(15)); await pg.wait_for_timeout(700)
         print('erneut in der Zone:', await pg.is_visible('#arrive'), '| Zielzone-Ansagen:', len([t for t in await pg.evaluate('_said') if 'Zielzone' in t]))
         print('Fehler:', errs)

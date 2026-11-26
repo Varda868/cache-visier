@@ -46,8 +46,8 @@ async def main():
         await pg.wait_for_timeout(200)
         print('Wieder senkrecht → Modus:', await pg.evaluate('document.body.dataset.mode'))
         # Blätter
-        await pg.click('#bHint'); await pg.wait_for_timeout(200); await pg.click('#hRot'); print('Hint ROT13:', await pg.text_content('#hint')); await pg.click('#sheetClose')
-        await pg.click('#bLogs'); await pg.wait_for_timeout(200); print('Logs:', await pg.text_content('#sheetBody p.sub')); await pg.click('#sheetClose')
+        await pg.click('#bCache'); await pg.click('[data-tab="info"]'); await pg.wait_for_timeout(200); await pg.click('#hRot'); print('Hint ROT13:', await pg.text_content('#hint')); await pg.click('#sheetClose')
+        await pg.click('#bCache'); await pg.click('[data-tab="logs"]'); await pg.wait_for_timeout(200); print('Logs:', await pg.text_content('#sheetBody p.sub')); await pg.click('#sheetClose')
         await pg.click('#bPhoto'); await pg.wait_for_timeout(1500)
         await pg.click('#bLog'); await pg.wait_for_timeout(500)
         print('Foto-Vorschauen:', await pg.locator('.thumbs img').count())
@@ -69,7 +69,7 @@ async def main():
              positionen:[{anker:'Bushaltestelle', osm_key:'highway', osm_value:'bus_stop', abstand_m:8, richtung_grad:-1, richtung_text:'neben', zitat:'8 m neben der Bushaltestelle', log_nr:2, sicherheit:'hoch'}]}}));
           if (u.includes('openstreetmap.org/api')) return new Response(JSON.stringify({elements:[{type:'node', id:1, lat:48.37125, lon:10.87105, tags:{highway:'bus_stop', name:'Test'}}]}));
           return of(u, o); }; }""")
-        await pg.click('#bAi'); await pg.click('#aGo'); await pg.wait_for_timeout(1200)
+        await pg.click('#bCache'); await pg.click('[data-tab="ki"]'); await pg.click('#aGo'); await pg.wait_for_timeout(1200)
         print('KI-Blatt:', (await pg.text_content('#sheetBody'))[:220].replace('\n', ' '))
         await pg.click('q[data-l="2"] >> nth=0'); await pg.wait_for_timeout(200)
         print('Ganzer Log nach Antippen:', (await pg.locator('.ai .full:not([hidden])').first.text_content())[:80])

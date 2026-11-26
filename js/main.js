@@ -1,11 +1,11 @@
 /* CacheVisier – PWA fürs Cachen vor Ort. Einstieg: lädt alle Module, startet beim DOMContentLoaded. */
 import { frame } from './ui/anzeige.js';
 import { $, S, closeSheet, loadAll, run } from './ui/basis.js';
-import { showInfo, showList, showLogs } from './ui/blaetter.js';
+import { showCache, showInfo, showList } from './ui/blaetter.js';
+import { maybeSetup } from './ui/hilfe.js';
 import { checkShareInbox } from './ui/import.js';
 import { cycleModeLock, keepAwake, startCamera, takePhoto, toggleTorch, updateButtons } from './ui/kamera.js';
 import { applyMapDark } from './ui/karte.js';
-import { showAi } from './ui/ki-auswertung.js';
 import { showMyLog } from './ui/log.js';
 import { renderStage } from './ui/multi.js';
 import { applyNight, onCamTap, toggleNight } from './ui/nacht.js';
@@ -19,6 +19,7 @@ import './ui/basis.js';
 import './ui/blaetter.js';
 import './ui/einstellungen.js';
 import './ui/funk.js';
+import './ui/hilfe.js';
 import './ui/import.js';
 import './ui/kamera.js';
 import './ui/karte.js';
@@ -29,8 +30,10 @@ import './ui/nacht.js';
 import './ui/offline.js';
 import './ui/peilung.js';
 import './ui/sensoren.js';
+import './ui/sicherung.js';
 import './ui/talk.js';
 import './ui/tour.js';
+import './ui/warnungen.js';
 import './ui/ziel-routing.js';
 
 /* ---------- Start ---------- */
@@ -42,6 +45,7 @@ async function start() {
   await startOrientation();
   await startCamera();
   keepAwake();
+  maybeSetup();
 }
 async function init() {
   document.body.dataset.mode = 'cam';
@@ -54,9 +58,7 @@ async function init() {
   $('#bTalk').onclick = showTalk;
   $('#cam').addEventListener('click', onCamTap);
   $('#top').onclick = e => { if (!e.target.closest('button')) showInfo(); };
-  $('#bHint').onclick = showInfo;
-  $('#bLogs').onclick = showLogs;
-  $('#bAi').onclick = showAi;
+  $('#bCache').onclick = showCache;
   $('#bLog').onclick = () => run(showMyLog);
   $('#bTorch').onclick = () => run(toggleTorch);
   $('#bPhoto').onclick = () => run(takePhoto);

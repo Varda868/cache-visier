@@ -29,27 +29,13 @@ async function requestRoute(reason) {
   const t = S.target, p = S.pos;
   if (!S.set.routing || !t || S.routeBusy) return;
   if (!p) { if (reason !== 'auto') toast('Route folgt, sobald GPS da ist'); return; }
-  const u = (S.set.routeUrl || '').trim();
-  if (!u) { toast('Routing-Adresse fehlt (Einstellungen)'); return; }
   S.routeBusy = true; S.routeTs = Date.now();
   const req = { locations: [{ lat: p.lat, lon: p.lon, type: 'break' }, { lat: t.lat, lon: t.lon, type: 'break' }],
     costing: S.set.routeCosting, directions_options: { units: 'kilometers', language: 'de-DE' } };
   const direct = base => fetch(base.replace(/\/+$/, '') + '/route?json=' + encodeURIComponent(JSON.stringify(req)));
   try {
-    let r, j, via = 'direkt';
-    if (/\.php(\?|$)/.test(u)) {
-      via = 'Server';
-      try {
-        r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Token': S.set.apiToken || '' }, body: JSON.stringify(req) });
-        j = await r.json().catch(() => null);
-      } catch (e) { r = null; j = null; }
-      // Rückfall wie bei Scooterways: Server-Weg kaputt (kein Token, keine config, Valhalla nicht erreichbar) → direkt zu FOSSGIS.
-      // Nicht bei Drossel (429) und nicht, wenn Valhalla selbst „kein Weg“ meldet (error_code).
-      if (!r || (!r.ok && r.status !== 429 && !(j && j.error_code))) {
-        if (r && r.status === 401 && reason !== 'auto') toast('🧭 Token fehlt oder falsch – Route direkt über FOSSGIS', 4000);
-        r = await direct(FOSSGIS); j = await r.json().catch(() => null); via = 'direkt';
-      }
-    } else { r = await direct(u); j = await r.json().catch(() => null); }
+    // Routing direkt beim öffentlichen FOSSGIS-Valhalla (gedrosselt: höchstens alle 20 s neu, 1,5 s nach Zielwechsel)
+    const via = 'direkt', r = await direct(FOSSGIS), j = await r.json().catch(() => null);
     if (!r.ok || !j || !j.trip) throw new Error(j && (j.error || j.error_code) ? `${j.error || ''}${j.error_code ? ' (' + j.error_code + ')' : ''}` : 'HTTP ' + r.status);
     if (targetKey(S.target) !== targetKey(t)) return; // Ziel inzwischen gewechselt
     const leg = j.trip.legs[0], pts = decodePolyline(leg.shape, 6), last = pts[pts.length - 1];
