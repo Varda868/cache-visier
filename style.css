@@ -240,6 +240,3 @@ body:has(#sheet:not([hidden])) #fPtt, body:has(#start:not([hidden])) #fPtt { dis
 .kiH a { margin-left: auto; font-size: 13px; color: #8fc1ff; }
 .kiP { font-size: 13px; padding: 5px 9px; }
 .kiS { color: var(--mut); }
-
-/* Koordinaten mitteln */
-.avgK { font-size: 20px; font-weight: 750; color: var(--acc); margin: 8px 0 2px; user-select: all; }

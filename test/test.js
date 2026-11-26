@@ -155,28 +155,6 @@ t('Reflektoren verfolgen: ruhig statt nervös', () => {
   for (let i = 0; i < 6; i++) st = A.trackSpots(st, [d(0.2, 0.2, W, 1200), d(0.7, 0.7, W, 400)], t += 220);
   assert.ok(st.visible.find(v => v.primary).fx < 0.5, 'deutlich stärkerer Reflektor wird hervorgehoben');
 });
-t('Koordinaten mitteln: stehen und umrunden', () => {
-  const lat0 = 48.37, lon0 = 10.87, kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
-  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 2; // fester Zufall
-  const at = (x, y, acc, ts) => ({ lat: lat0 + y / ky, lon: lon0 + x / kx, acc, ts });
-  // stehen: 4 m Rauschen, ein grober Ausreißer (60 m), eine ungenaue Messung (±50 m)
-  const st = []; for (let i = 0; i < 300; i++) st.push(at(rnd() * 4, rnd() * 4, 5, i * 1000));
-  st.push(at(60, 0, 5, 301000)); st.push(at(-30, 10, 50, 302000));
-  const r = A.averageFixes(st, 'stehen');
-  assert.ok(A.haversine(lat0, lon0, r.lat, r.lon) < 0.6, 'Mittelwert nahe am wahren Punkt');
-  assert.strictEqual(r.n, 301); assert.strictEqual(r.used, 300); assert.strictEqual(r.art, 'mittel');
-  assert.ok(r.fehler < r.streuung68 && r.fehler >= 1 && r.dauer > 290, 'Fehler kleiner als Streuung, nicht unter 1 m, Dauer in s');
-  // umrunden: Kreis 6 m um den Punkt (versetzt 2 m O, 1 m N), mit 1,5 m Rauschen – Mitte statt Durchschnitt der Spur
-  const ci = []; for (let i = 0; i < 240; i++) { const a = i / 240 * 2 * Math.PI * 1.5; ci.push(at(2 + 6 * Math.cos(a) + rnd() * 1.5, 1 + 6 * Math.sin(a) + rnd() * 1.5, 5, i * 1000)); }
-  const k = A.averageFixes(ci, 'umrunden'), wahr = at(2, 1);
-  assert.strictEqual(k.art, 'kreis'); near(k.radius, 6, 0.5); assert.ok(k.bogen >= 300);
-  assert.ok(A.haversine(wahr.lat, wahr.lon, k.lat, k.lon) < 0.6, 'Kreismitte getroffen');
-  // kurzer Bogen (gut 100°) reicht nicht: Hinweis und Rückfall auf Mittelwert, auch eine knappe halbe Runde nicht
-  const hb = ci.filter((p, i) => i < 50);
-  assert.strictEqual(A.averageFixes(ci.filter((p, i) => i < 80), 'umrunden').art, 'mittel');
-  const h = A.averageFixes(hb, 'umrunden'); assert.strictEqual(h.art, 'mittel'); assert.ok(/weiter im Kreis/.test(h.hinweis));
-  assert.strictEqual(A.averageFixes([at(0, 0, 80, 0)], 'stehen'), null);
-});
 t('Ansage-Stufen', () => {
   assert.strictEqual(A.annStepBelow(730), 500); assert.strictEqual(A.annStepBelow(100), 50); assert.strictEqual(A.annStepBelow(9), null); assert.strictEqual(A.annStepBelow(5000), 2000);
 });
