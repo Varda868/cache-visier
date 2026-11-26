@@ -119,12 +119,20 @@ async function checkShareInbox() {
 
 /* ---------- Opencaching (OKAPI) ---------- */
 async function okapi(method, params) {
-  if (!S.set.okapiKey) throw new Error('OKAPI-Schlüssel fehlt (Einstellungen)');
+  const key = String(S.set.okapiKey || '').replace(/\s+/g, '');
+  if (!key) throw new Error('OKAPI-Schlüssel fehlt (☰ → ⚙️ → Opencaching)');
   const u = new URL('https://www.opencaching.de/okapi/services/' + method);
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, v);
-  u.searchParams.set('consumer_key', S.set.okapiKey);
-  const r = await fetch(u);
-  if (!r.ok) throw new Error('OKAPI ' + r.status + ': ' + (await r.text()).slice(0, 160));
+  u.searchParams.set('consumer_key', key);
+  let r;
+  try { r = await fetch(u); } catch (e) { throw new Error('Opencaching nicht erreichbar (Netz?)'); }
+  if (!r.ok) {
+    const t = await r.text(); let m = t.slice(0, 160);
+    try { m = JSON.parse(t).error.developer_message || m; } catch (e) { /* Text lassen */ }
+    if (/consumer_key|Consumer does not exist/i.test(m)) throw new Error('OKAPI-Schlüssel wird nicht angenommen. Den „Consumer Key“ von opencaching.de/okapi/signup.html eintragen, nicht das „Consumer Secret“ (Schlüssel von opencaching.pl/.nl/.us gelten hier nicht).');
+    if (/username/i.test(m) && method.startsWith('users/')) throw new Error('OC-Benutzername nicht gefunden: ' + S.set.ocUser);
+    throw new Error('OKAPI ' + r.status + ': ' + m);
+  }
   return r.json();
 }
 function stripHtml(h) { return new DOMParser().parseFromString(String(h || ''), 'text/html').body.textContent.replace(/\n{3,}/g, '\n\n').trim(); }

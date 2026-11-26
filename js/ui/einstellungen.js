@@ -55,7 +55,7 @@ function showSettings() {
     <label class="f"><span>Unterwegs</span><select data-k="routeCosting"><option value="pedestrian">zu Fuß</option><option value="bicycle">Fahrrad</option><option value="motor_scooter">Roller</option><option value="auto">Auto</option></select></label>
     ${f('lookahead', 'Markierung so weit voraus auf dem Weg (m)', 'number', 'min="10" max="80" step="5"')}
     <h4>Daten</h4>
-    ${f('maxLogs', 'Logs pro Cache', 'number', 'min="5" max="200" step="5"')}
+    ${f('maxLogs', 'Logs pro Cache beim Laden (5–500, gilt beim nächsten Import)', 'number', 'min="5" max="500" step="5" inputmode="numeric"')}
     <h4>KI-Auswertung</h4>
     <label class="f"><span>Weg</span><select data-k="kiMode"><option value="direkt">direkt mit eigenem Schlüssel</option><option value="skript">über ein eigenes KI-Skript (Server)</option></select></label>
     <div id="kiDirekt">
@@ -94,9 +94,24 @@ function showSettings() {
       });
     });
     b.querySelectorAll('[data-k]').forEach(el => {
+      const fest = () => { // Text: Leerzeichen/Zeilenumbrüche vom Kopieren weg; Zahl: auf den erlaubten Bereich begrenzen
+        const k = el.dataset.k;
+        if (el.type === 'checkbox') return (s[k] = el.checked);
+        if (el.type === 'number') {
+          let v = +String(el.value).replace(',', '.'); const lo = el.min !== '' ? +el.min : -Infinity, hi = el.max !== '' ? +el.max : Infinity;
+          if (!isFinite(v)) v = s[k];
+          if (v < lo || v > hi) { v = Math.min(hi, Math.max(lo, v)); el.value = v; toast(`Erlaubt: ${lo} bis ${hi}`); }
+          return (s[k] = v);
+        }
+        return (s[k] = el.tagName === 'SELECT' || k === 'talkPw' ? el.value : String(el.value).trim());
+      };
+      // Text sofort beim Tippen merken: Wer das Blatt direkt schließt, verliert sonst die Eingabe
+      if (el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'number') el.oninput = () => { s[el.dataset.k] = el.dataset.k === 'talkPw' ? el.value : el.value.trim(); clearTimeout(S.setT); S.setT = setTimeout(saveSettings, 400); };
       el.onchange = () => {
         const k = el.dataset.k;
-        s[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value;
+        fest();
+        if (el.type !== 'checkbox' && el.type !== 'number' && el.tagName === 'INPUT' && k !== 'talkPw' && el.value !== s[k]) el.value = s[k];
+        if (k === 'maxLogs') toast(`Gilt beim nächsten Laden: Caches neu aus c:geo, GPX oder Opencaching laden (höchstens so viele, wie die Quelle hat)`, 6000);
         if (k === 'ocUser') s.ocUuid = '';
         saveSettings();
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
