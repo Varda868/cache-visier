@@ -491,6 +491,58 @@ function trackSpots(st, dets, now, o) {
   st.visible = vis.map(t => ({ id: t.id, fx: t.fx, fy: t.fy, fr: t.fr, name: t.name, teile: t.teile, score: t.score, primary: t.id === st.primary }));
   return st;
 }
+/* --- Koordinatenmittelung (GPS averaging) ---
+   fixes: [{lat, lon, acc, ts}]. Messungen mit Genauigkeit schlechter als accMax (Standard 20 m) und Ausreißer
+   (weiter als 3 × Median-Abstand, mind. 5 m vom Median) fallen weg.
+   Modus 'stehen': nach Genauigkeit gewichteter Mittelwert (Gewicht 1/acc²).
+   Modus 'umrunden': Mittelpunkt eines Kreises durch die Spur (Kåsa-Ausgleich). Nur gültig, wenn die Spur den Punkt
+   umschließt (etwa ab ¾ Runde) und der Radius 1–40 m ist; sonst gewichteter Mittelwert mit Hinweis.
+   streuung68: Radius, in dem 68 % der Messungen liegen. fehler: geschätzter Fehler des Ergebnisses. GPS-Fehler sind über
+   etwa 30 s miteinander verbunden, deshalb zählt nicht jede Sekunde als neue Messung (n_eff = Dauer / 30 s, mind. 1). */
+function averageFixes(fixes, mode, o) {
+  o = o || {};
+  const accMax = o.accMax || 20;
+  let F = (fixes || []).filter(f => f && isFinite(f.lat) && isFinite(f.lon) && (!(f.acc > 0) || f.acc <= accMax));
+  if (!F.length) return null;
+  const med = a => { const b = [...a].sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+  const lat0 = med(F.map(f => f.lat)), lon0 = med(F.map(f => f.lon)), kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+  let P = F.map(f => ({ x: (f.lon - lon0) * kx, y: (f.lat - lat0) * ky, w: 1 / Math.pow(Math.max(f.acc || 5, 3), 2), ts: f.ts || 0 }));
+  const d0 = P.map(p => Math.hypot(p.x, p.y)), mdist = med(d0), lim = Math.max(5, 3 * mdist);
+  // Beim Umrunden ist der Abstand zum Median der Kreisradius – Ausreißer dort über die Abweichung vom typischen Radius erkennen
+  const keep = mode === 'umrunden' ? d0.map(d => Math.abs(d - mdist) <= Math.max(5, 3 * med(d0.map(x => Math.abs(x - mdist))))) : d0.map(d => d <= lim);
+  P = P.filter((p, i) => keep[i]);
+  const n = P.length, ws = P.reduce((a, p) => a + p.w, 0);
+  let cx = P.reduce((a, p) => a + p.x * p.w, 0) / ws, cy = P.reduce((a, p) => a + p.y * p.w, 0) / ws, art = 'mittel', hinweis = '', radius = 0, bogen = 0;
+  if (mode === 'umrunden' && n >= 8) {
+    // Kåsa: x² + y² + D·x + E·y + G = 0 per kleinster Quadrate (Normalgleichungen 3×3)
+    let a11 = 0, a12 = 0, a13 = 0, a22 = 0, a23 = 0, b1 = 0, b2 = 0, b3 = 0;
+    for (const p of P) { const z = -(p.x * p.x + p.y * p.y); a11 += p.x * p.x; a12 += p.x * p.y; a13 += p.x; a22 += p.y * p.y; a23 += p.y; b1 += z * p.x; b2 += z * p.y; b3 += z; }
+    const A = [[a11, a12, a13], [a12, a22, a23], [a13, a23, n]], B = [b1, b2, b3];
+    const det = m => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    const D0 = det(A);
+    if (Math.abs(D0) > 1e-9) {
+      const col = (k) => A.map((r, i) => r.map((v, j) => (j === k ? B[i] : v)));
+      const D = det(col(0)) / D0, E = det(col(1)) / D0, G = det(col(2)) / D0;
+      const kx2 = -D / 2, ky2 = -E / 2, r2 = kx2 * kx2 + ky2 * ky2 - G;
+      if (r2 > 0) {
+        const r = Math.sqrt(r2), ang = P.map(p => Math.atan2(p.y - ky2, p.x - kx2)).sort((a, b) => a - b);
+        let gap = ang[0] + 2 * Math.PI - ang[ang.length - 1];
+        for (let i = 1; i < ang.length; i++) gap = Math.max(gap, ang[i] - ang[i - 1]);
+        bogen = Math.round(360 - gap * 180 / Math.PI);
+        // Bei kurzen Bögen rechnet der Ausgleich den Kreis zu klein und die Mitte zu nah an die Spur. Deshalb zusätzlich:
+        // Die Spur muss die Mitte wirklich umschließen (Schwerpunkt der Spur nahe der Kreismitte), praktisch ab etwa ¾ Runde.
+        const umschliesst = Math.hypot(cx - kx2, cy - ky2) < 0.35 * r;
+        if (r >= 1 && r <= 40 && bogen >= 240 && umschliesst) { cx = kx2; cy = ky2; radius = r; art = 'kreis'; }
+        else hinweis = bogen < 240 || !umschliesst ? `Spur reicht noch nicht für die Kreismitte – weiter im Kreis gehen (mindestens ¾ Runde)` : 'Kreis passt nicht (Radius) – Mittelwert verwendet';
+      }
+    }
+  } else if (mode === 'umrunden') hinweis = 'noch zu wenige Messungen für den Kreis';
+  const res = art === 'kreis' ? P.map(p => Math.abs(Math.hypot(p.x - cx, p.y - cy) - radius)) : P.map(p => Math.hypot(p.x - cx, p.y - cy));
+  const sorted = [...res].sort((a, b) => a - b), streuung68 = sorted[Math.min(sorted.length - 1, Math.floor(0.68 * sorted.length))] || 0;
+  const ts = P.map(p => p.ts).filter(Boolean), dauer = ts.length ? (Math.max(...ts) - Math.min(...ts)) / 1000 : 0;
+  const neff = Math.max(1, Math.min(n, dauer / 30));
+  return { lat: lat0 + cy / ky, lon: lon0 + cx / kx, n: F.length, used: n, streuung68, fehler: Math.max(1, streuung68 / Math.sqrt(neff)) /* unter 1 m ist mit Handy-GPS nicht belastbar */, dauer, art, radius, bogen, hinweis };
+}
 
 /* Ansagen: größte Stufe unterhalb der Entfernung */
 const ANN_STEPS = [2000, 1000, 500, 200, 100, 50, 20, 10];
@@ -1035,6 +1087,7 @@ function startGps() {
     S.pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, heading: p.coords.heading, speed: p.coords.speed, ts: p.timestamp };
     if (first) drawCacheMarkers();
     onPosRoute();
+    if (S.avg && S.avg.on) avgAdd(S.pos);
   }, e => toast('GPS: ' + e.message), { enableHighAccuracy: true, maximumAge: 1000, timeout: 30000 });
 }
 
@@ -1312,7 +1365,7 @@ function showList(filter = '') {
   openSheet(`Caches (${S.caches.size})`, `
     <div class="tools">
       <button id="lFolder">📁 c:geo-Backup laden</button><button id="lFile">📄 Datei wählen</button>
-      <button id="lOc">🟢 OC in der Nähe</button><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button><button id="lTour">🗺️ Tour</button>
+      <button id="lOc">🟢 OC in der Nähe</button><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lAvg">📍 Mitteln</button><button id="lOff">📦 Offline</button><button id="lTour">🗺️ Tour</button>
       <button id="lSet">⚙️ Einstellungen</button><button id="lDiag">🩺 Diagnose</button>
     </div>
     <input id="lFilter" type="search" placeholder="Suchen (Name oder Code)" value="${esc(filter)}">
@@ -1321,6 +1374,7 @@ function showList(filter = '') {
     b.querySelector('#lFile').onclick = pickFile;
     b.querySelector('#lOc').onclick = () => run(loadOcNearby);
     b.querySelector('#lPeil').onclick = () => showPeilung();
+    b.querySelector('#lAvg').onclick = showAvg;
     b.querySelector('#lOff').onclick = () => run(showOffline);
     b.querySelector('#lTour').onclick = () => showTour();
     b.querySelector('#lAi').onclick = () => run(aiAll);
@@ -1796,6 +1850,79 @@ function updatePeilbar(sc) {
     el.querySelector('#pbX').onclick = () => { S.peil = null; el.hidden = true; delete el.dataset.ready; };
   }
   el.querySelector('#pbVal').textContent = `${Math.round(deg)}° ${compassName(deg)} · ${S.peil.dist ? 'ca. ' + Math.round(S.peil.dist) + ' m' : 'Entfernung: auf den Fuß zielen'}`;
+}
+/* ---------- Koordinaten mitteln (GPS averaging) ---------- */
+function avgAdd(p) {
+  const A = S.avg; if (!A || !A.on || !p) return;
+  if (A.fixes.length && p.ts === A.fixes[A.fixes.length - 1].ts) return;
+  A.fixes.push({ lat: p.lat, lon: p.lon, acc: p.acc, ts: p.ts || Date.now() });
+  A.res = averageFixes(A.fixes, A.mode);
+  const min = Math.floor((Date.now() - A.t0) / 60000);
+  if (min > (A.lastMin || 0) && [1, 3, 5, 10].includes(min)) {
+    A.lastMin = min; buzz([60, 60, 60]);
+    if (A.res) say(`${min} ${min > 1 ? 'Minuten' : 'Minute'} gemittelt, etwa ${Math.max(1, Math.round(A.res.fehler))} Meter genau`);
+  }
+  avgRender(); avgMap();
+}
+function avgMap() {
+  if (!S.map || !window.L) return;
+  const r = S.avg && S.avg.res;
+  if (!r) { if (S.L.avg) { S.L.avg.remove(); S.L.avg = null; } return; }
+  if (!S.L.avg) S.L.avg = L.layerGroup().addTo(S.map);
+  S.L.avg.clearLayers();
+  L.circle([r.lat, r.lon], { radius: Math.max(1, r.fehler), color: '#ff851b', weight: 2, fillOpacity: 0.15, interactive: false }).addTo(S.L.avg);
+  L.circleMarker([r.lat, r.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#ff851b', fillOpacity: 1 }).bindPopup('📍 gemittelt ' + fmtCoord(r.lat, r.lon)).addTo(S.L.avg);
+}
+function avgText(r) {
+  return `${fmtCoord(r.lat, r.lon)}`;
+}
+function avgRender() {
+  const el = $('#avgOut'); if (!el) return;
+  const A = S.avg, r = A && A.res, sec = A ? Math.round(((A.on ? Date.now() : A.t1 || Date.now()) - A.t0) / 1000) : 0;
+  const mm = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  const btn = $('#avgGo'); if (btn) btn.textContent = A && A.on ? '⏸ Anhalten' : A && A.fixes.length ? '▶ Weiter messen' : '▶ Start';
+  if (!A || !A.fixes.length) { el.innerHTML = `<p class="sub">${A && A.on ? '⏳ warte auf GPS …' : 'Noch keine Messung.'}${S.pos ? ` GPS jetzt ±${Math.round(S.pos.acc)} m.` : ''}</p>`; return; }
+  const t = S.target, rel = r && t ? (() => { const d = haversine(t.lat, t.lon, r.lat, r.lon), b = bearing(t.lat, t.lon, r.lat, r.lon); return `${d < 0.5 ? '< 1 m' : Math.round(d) + ' m ' + compassName(b) + ' (' + Math.round(b) + '°)'} vom Ziel „${esc(t.label || t.name || '')}“`; })() : '';
+  const gut = r && r.fehler <= 2 && sec >= 180;
+  el.innerHTML = r ? `
+    <div class="avgK">${esc(avgText(r))}</div>
+    <p class="sub">${A.on ? '🔴 misst' : '⏸ angehalten'} · ${mm} min · ${r.used} von ${r.n} Messungen verwendet · GPS jetzt ±${S.pos ? Math.round(S.pos.acc) : '?'} m</p>
+    <p>Streuung ±${r.streuung68.toFixed(1).replace('.', ',')} m · geschätzt <b>±${r.fehler.toFixed(1).replace('.', ',')} m</b> genau ${gut ? '✅' : sec < 180 ? '· für gute Werte 3–5 min messen' : ''}</p>
+    ${r.art === 'kreis' ? `<p class="sub">🔄 Kreismitte aus deiner Runde: Radius ${r.radius.toFixed(1).replace('.', ',')} m, ${r.bogen}° umrundet.</p>` : ''}
+    ${r.hinweis ? `<p class="sub">⚠️ ${esc(r.hinweis)}</p>` : ''}
+    ${rel ? `<p class="sub">📏 ${rel}</p>` : ''}
+    <div class="tools"><button id="avgCopy">📋 Kopieren</button><button id="avgTarget">🎯 Als Ziel</button>${curCache() ? '<button id="avgLog">✍️ In Log übernehmen</button>' : ''}</div>`
+    : '<p class="sub">Alle bisherigen Messungen waren ungenauer als 20 m. Weiter warten, freien Himmel suchen.</p>';
+  const c = $('#avgCopy'); if (c) c.onclick = () => navigator.clipboard.writeText(avgText(r)).then(() => toast('📋 ' + avgText(r)));
+  const g = $('#avgTarget'); if (g) g.onclick = () => { const c0 = curCache(); setTarget(c0 ? { kind: 'wpt', geocode: c0.geocode, lat: r.lat, lon: r.lon, label: 'gemittelt', name: c0.name } : { kind: 'point', lat: r.lat, lon: r.lon, label: 'gemittelt', name: '📍 Gemittelte Koordinaten' }); };
+  const l = $('#avgLog'); if (l) l.onclick = () => run(async () => {
+    const c0 = curCache(), dl = c0 ? haversine(c0.lat, c0.lon, r.lat, r.lon) : 0, bl = c0 ? bearing(c0.lat, c0.lon, r.lat, r.lon) : 0;
+    const txt = `Gemittelte Koordinaten: ${avgText(r)} (${sec < 60 ? 'unter 1 min' : Math.round(sec / 60) + ' min'}, ${r.used} Messungen, etwa ±${Math.max(1, Math.round(r.fehler))} m${c0 ? `; ${dl < 1 ? 'unter 1 m' : Math.round(dl) + ' m ' + compassName(bl)} von den Listing-Koordinaten` : ''})`;
+    await showMyLog(); const ta = $('#lText'); if (ta) { ta.value = (ta.value ? ta.value + '\n' : '') + txt; ta.focus(); }
+  });
+}
+function showAvg() {
+  const A = S.avg || (S.avg = { on: false, mode: 'stehen', fixes: [], t0: Date.now(), res: null });
+  openSheet('📍 Koordinaten mitteln', `
+    <div class="seg" id="avgMode"><label><input type="radio" name="am" value="stehen" ${A.mode === 'stehen' ? 'checked' : ''}>🧍 Stehen bleiben</label><label><input type="radio" name="am" value="umrunden" ${A.mode === 'umrunden' ? 'checked' : ''}>🔄 Umrunden</label></div>
+    <p class="sub" id="avgTip"></p>
+    <div class="tools"><button id="avgGo">▶ Start</button><button id="avgNew">↺ Neu</button></div>
+    <div id="avgOut"></div>`, b => {
+    const tip = () => { b.querySelector('#avgTip').textContent = A.mode === 'umrunden'
+      ? 'In einem gleichmäßigen Kreis von 3–10 m um die Dose gehen, am besten mehrere Runden. Die App rechnet die Kreismitte aus. Das gleicht auch Fehler durch Häuser und Bäume teilweise aus, braucht aber einen ganzen Kreis.'
+      : 'Direkt an der Dose stehen bleiben, Handy ruhig und möglichst frei zum Himmel halten. 3–5 Minuten messen, die App sagt nach 1, 3 und 5 Minuten an.';
+      b.querySelector('#avgTip').textContent += ' Abweichungen, die über Minuten gleich bleiben (Häuser, Felswand, dichte Bäume), kann keine Mittelung erkennen.'; };
+    tip();
+    b.querySelectorAll('input[name=am]').forEach(x => { x.onchange = () => { A.mode = x.value; A.res = averageFixes(A.fixes, A.mode); tip(); avgRender(); avgMap(); }; });
+    b.querySelector('#avgGo').onclick = () => {
+      if (A.on) { A.on = false; A.t1 = Date.now(); }
+      else { if (!A.fixes.length) A.t0 = Date.now(); else if (A.t1) A.t0 += Date.now() - A.t1; A.on = true; A.t1 = 0; if (S.pos) avgAdd(S.pos); }
+      avgRender();
+    };
+    b.querySelector('#avgNew').onclick = () => { Object.assign(A, { on: false, fixes: [], t0: Date.now(), t1: 0, res: null, lastMin: 0 }); avgRender(); avgMap(); };
+    clearInterval(S.avgTimer); S.avgTimer = setInterval(() => { if (!$('#avgOut')) { clearInterval(S.avgTimer); return; } if (S.avg.on) avgRender(); }, 1000);
+    avgRender();
+  });
 }
 function showPeilung(pre) {
   pre = pre || {};
@@ -2481,5 +2608,5 @@ window.addEventListener('DOMContentLoaded', init);
 if (typeof module !== 'undefined') module.exports = {
   haversine, bearing, destPoint, wrap180, compassName, rot13, fmtDist, fmtCoord, colsFromEuler, colsFromQuat, orthonormal,
   vecHeading, vecElev, camVec, viewHeading, projectToScreen, normType, normSize, logTypeInfo, dnfStreak, lastFound,
-  fieldNoteLine, utf16le, screenCols, screenRay, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, GEAR_HARD, findBrightSpots, mergeSpots, colorName, trackSpots, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
+  fieldNoteLine, utf16le, screenCols, screenRay, htmlText, sunElevation, mapAttr, toolAttrs, missingGear, textTools, toolsOf, planTour, GEAR_HARD, findBrightSpots, mergeSpots, colorName, trackSpots, averageFixes, annStepBelow, evalExpr, fillTemplate, parseCoord, resolvePoint, stationVarsDone, quersumme, decodePolyline, routeCum, routeLocate, routePointAt, sniffFormat, importCgeo, nearestOsm, toMs
 };
