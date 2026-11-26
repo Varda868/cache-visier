@@ -5,6 +5,7 @@ import { $, S, openSheet, run, toast } from './basis.js';
 import { showDiag, showSettings } from './einstellungen.js';
 import { showChecker } from './checker.js';
 import { showHilfe } from './hilfe.js';
+import { showSonden } from './sonden.js';
 import { nfcMoeglich, showNfc } from './nfc.js';
 import { showSicherung } from './sicherung.js';
 import { loadNewestBackup, loadOcNearby, pickFile, stripHtml } from './import.js';
@@ -31,7 +32,7 @@ function showList(filter = '') {
   openSheet(`Caches (${S.caches.size})`, `
     <div class="tools">
       <button id="lFolder">📁 c:geo-Backup laden</button><button id="lFile">📄 Datei wählen</button><button id="lOc">🟢 OC in der Nähe</button>
-      <button id="lTour">🗺️ Tour</button><button id="lSet">⚙️ Einstellungen</button><button id="lHelp">❓ Hilfe</button><button id="lMore" aria-expanded="${S.moreOpen ? 'true' : 'false'}">${S.moreOpen ? '▴ Weniger' : '⋯ Mehr'}</button>
+      <button id="lTour">🗺️ Tour</button>${S.set.sonden ? '<button id="lSonde">🎈 Sonden</button>' : ''}<button id="lSet">⚙️ Einstellungen</button><button id="lHelp">❓ Hilfe</button><button id="lMore" aria-expanded="${S.moreOpen ? 'true' : 'false'}">${S.moreOpen ? '▴ Weniger' : '⋯ Mehr'}</button>
       <span id="lMoreBox" ${S.moreOpen ? '' : 'hidden'}><button id="lAi">🤖 Alle auswerten</button><button id="lPeil">📐 Peilung</button><button id="lOff">📦 Offline</button><button id="lBackup">💾 Sicherung</button><button id="lDiag">🩺 Diagnose</button>${nfcMoeglich() ? '<button id="lNfc">📶 NFC</button>' : ''}</span>
     </div>
     <input id="lFilter" type="search" placeholder="Suchen (Name oder Code)" value="${esc(filter)}">
@@ -42,6 +43,7 @@ function showList(filter = '') {
     b.querySelector('#lPeil').onclick = () => showPeilung();
     b.querySelector('#lOff').onclick = () => run(showOffline);
     b.querySelector('#lTour').onclick = () => showTour();
+    if (b.querySelector('#lSonde')) b.querySelector('#lSonde').onclick = () => run(showSonden);
     b.querySelector('#lAi').onclick = () => run(aiAll);
     b.querySelector('#lSet').onclick = showSettings;
     b.querySelector('#lDiag').onclick = showDiag;

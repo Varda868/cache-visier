@@ -6,6 +6,7 @@ import { $, S } from './basis.js';
 import { drawTalkPos } from './funk.js';
 import { drawRays } from './nacht.js';
 import { drawTeam } from './team.js';
+import { drawSonden } from './sonden.js';
 import { drawTour } from './tour.js';
 import { activeRoute, drawRoute, targetCache } from './ziel-routing.js';
 
@@ -21,6 +22,7 @@ function initMap() {
   S.L.line = L.polyline([], { color: '#ffdc00', weight: 3, dashArray: '6 8' }).addTo(S.map);
   S.L.tour = L.layerGroup().addTo(S.map);
   S.L.team = L.layerGroup().addTo(S.map);
+  S.L.sonden = L.layerGroup().addTo(S.map);
   S.L.talk = L.layerGroup().addTo(S.map);
   S.L.rays = L.layerGroup().addTo(S.map);
   S.L.steer = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, fillColor: '#3d8bff', fillOpacity: 1, interactive: false });
@@ -29,7 +31,7 @@ function initMap() {
   S.map.on('dragstart', () => { S.follow = false; $('#bFollow').hidden = false; });
   S.map.on('zoomstart', () => { if (!S.progZoom) S.zoomPause = performance.now() + 20000; });
   S.map.on('zoomend', () => { S.progZoom = false; });
-  drawCacheMarkers(); drawRoute(); drawTour(); drawTalkPos(); drawRays(); drawTeam();
+  drawCacheMarkers(); drawRoute(); drawTour(); drawTalkPos(); drawRays(); drawTeam(); drawSonden();
 }
 function drawCacheMarkers() {
   if (!S.map) return;

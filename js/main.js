@@ -40,6 +40,7 @@ import './ui/zonen-ar.js';
 import './ui/team.js';
 import './ui/qr.js';
 import './ui/nfc.js';
+import './ui/sonden.js';
 
 /* ---------- Start ---------- */
 async function start() {

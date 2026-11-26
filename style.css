@@ -314,3 +314,15 @@ body[data-mode=map] #zonen { display: none; }
 #codeCard .cc-t { font-size: 17px; margin: 6px 0; word-break: break-word; }
 #codeCard .cc-s { font-size: 13px; color: var(--mut); word-break: break-word; }
 #codeCard .cc-b { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* Wettersonden */
+li.so { padding: 10px 0; border-bottom: 1px solid var(--line); }
+li.so .so-l { color: #ff9f1a; font-size: 14px; margin-top: 3px; }
+li.so .so-f { font-size: 14px; margin-top: 3px; color: var(--mut); } li.so .so-f.ok { color: var(--ok); }
+li.so .so-b { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+li.so .so-b a.btn { display: inline-block; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--fg); text-decoration: none; font-size: 14px; }
+.sondeM { color: #fff; font: 700 12px system-ui; text-shadow: 0 0 3px #000, 0 0 3px #000; white-space: nowrap; transform: translate(-50%, -50%); }
+.sondeM small { font-weight: 400; color: #cfe0ff; }
+.sondeL { color: #ff9f1a; font: 900 20px system-ui; text-shadow: 0 0 3px #000; transform: translate(-50%, -50%); }
+ul.solist { list-style: none; margin: 0; padding: 0; }
+.so-q a { color: #8ab4ff; }

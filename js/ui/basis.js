@@ -9,7 +9,7 @@ function kiDefaults() { const o = {}; for (const a of KIA()) { o['kiKey_' + a.id
 const DEFAULTS = {
   fovH: 50, phoneH: 1.4, compassOffset: 0, sensor: 'auto', autoMode: true, maxLogs: 40,
   kiMode: 'direkt', ...kiDefaults(), apiUrl: '', apiToken: '', okapiKey: '', ocUser: '', ocUuid: '', ocRadius: 3, hideFound: true,
-  keepAwake: true, camSave: true, zonenAR: true, qrScan: true, smoothing: 0.25, mapDark: 'on', autoZoom: true,
+  keepAwake: true, camSave: true, zonenAR: true, qrScan: true, sonden: false, sondenKm: 100, smoothing: 0.25, mapDark: 'on', autoZoom: true,
   night: false, speak: true, vibrate: true, stepLen: 0.75, declination: 4, skipGear: true,
   talkOn: false, talkName: '', talkPw: '', talkCache: true, talkLive: 'aus', talkRelays: 'wss://nos.lol wss://relay.primal.net wss://nostr.mom',
   gear_flashlight: true, gear_uv: false, gear_pen: true, gear_tweezers: true, gear_magnet: false, gear_mirror: false, gear_gloves: true,

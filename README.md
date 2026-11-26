@@ -98,6 +98,7 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 - **Suchzonen im Kamerabild** (`ui/zonen-ar.js`): Zonen im Umkreis von 150 m liegen als Ringe auf dem Boden – Kreispunkte am Boden (Handyhöhe tiefer) einzeln projiziert, dadurch perspektivisch als Ellipse. Farbe nach Sicherheit, Bezugsobjekt als 📍-Nadel. Abschaltbar (⚙️).
 - **QR-Codes** (`ui/qr.js`): Das Kamerabild wird alle 0,7 s mit dem `BarcodeDetector` des Browsers geprüft (Chrome/Android; Safari hat ihn nicht). Fundkarte mit Koordinate → Ziel, Link erst nach Tipp (Domain sichtbar), Kopieren. Abschaltbar.
 - **NFC** (`ui/nfc.js`, Web NFC, nur Chrome/Android mit NFC): Anhänger lesen (Text, URL, Koordinaten → dieselbe Fundkarte) und beschreiben. Menüpunkt erscheint nur, wenn der Browser NFC kann.
+- **🎈 Wettersonden** (`kern/sonden.js`, `ui/sonden.js`, zuschaltbar): Daten von [SondeHub](https://sondehub.org) (CC BY-SA 2.0) direkt aus dem Browser – `/sondes` (letzte Positionen im Umkreis, 12 h), `/predictions` (Landepunkt), `/recovered` (Fundmeldungen), `/sites` (Startorte). Abgefragt wird nur beim Öffnen, per ↻ und alle 3 min, solange eine Sonde das Ziel ist. Landepunkt oder letzte Position wird zum Ziel mit Karte, Route und Visier; das Ziel zieht bei neuen Daten nach.
 - Das sind Vorschläge, keine Koordinaten. Das Zitat zeigt, worauf sie beruhen.
 
 ## Multi-Stationen und Foto → KI

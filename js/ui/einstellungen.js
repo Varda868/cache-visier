@@ -4,11 +4,12 @@ import { KIA, S, openSheet, run, saveSettings, toast } from './basis.js';
 import { connectFolder, findDbFiles } from './import.js';
 import { applyMapDark } from './karte.js';
 import { applyNight } from './nacht.js';
+import { drawSonden } from './sonden.js';
 import { initTalk } from './talk.js';
 
 /* ---------- Einstellungen + Diagnose ---------- */
 /* Einstellungen: <h4>-Abschnitte als aufklappbare Gruppen, wichtigste zuerst; offen bleibt, was in dieser Sitzung offen war */
-const GRUPPEN_FOLGE = ['KI-Auswertung', 'Unterwegs', 'Anzeige', 'Meine Ausrüstung', '💬 b:con talk', 'Routing', 'Opencaching', 'Daten'];
+const GRUPPEN_FOLGE = ['KI-Auswertung', 'Unterwegs', 'Anzeige', 'Meine Ausrüstung', '💬 b:con talk', 'Routing', 'Opencaching', '🎈 Wettersonden', 'Daten'];
 function gruppen(html) {
   const teile = html.split(/<h4>(.*?)<\/h4>/), kopf = teile[0], g = [];
   for (let i = 1; i < teile.length; i += 2) g.push({ titel: teile[i], inhalt: teile[i + 1] });
@@ -56,6 +57,9 @@ function showSettings() {
     <h4>Routing (Valhalla)</h4>
     <label class="f"><span>Unterwegs</span><select data-k="routeCosting"><option value="pedestrian">zu Fuß</option><option value="bicycle">Fahrrad</option><option value="motor_scooter">Roller</option><option value="auto">Auto</option></select></label>
     ${f('lookahead', 'Markierung so weit voraus auf dem Weg (m)', 'number', 'min="10" max="80" step="5"')}
+    <h4>🎈 Wettersonden (SondeHub)</h4>
+    ${chk('sonden', '🎈 Wettersonden suchen: Menüpunkt „Sonden“ und Sonden auf der Karte')}
+    ${f('sondenKm', 'Umkreis (km)', 'number', 'min="10" max="300" step="10" inputmode="numeric"')}
     <h4>Daten</h4>
     ${f('maxLogs', 'Logs pro Cache beim Laden (5–500, gilt beim nächsten Import)', 'number', 'min="5" max="500" step="5" inputmode="numeric"')}
     <h4>KI-Auswertung</h4>
@@ -120,6 +124,7 @@ function showSettings() {
         if (k === 'sensor') toast('Kompass-Quelle gilt nach Neustart der App');
         if (k === 'mapDark') applyMapDark();
         if (k === 'night') applyNight();
+        if (k === 'sonden') drawSonden();
         if (k === 'kiMode') kiWeg();
         if (/^talk(On|Pw|Cache|Relays)$/.test(k)) { clearTimeout(S.talkT); S.talkT = setTimeout(() => run(initTalk), 800); }
         if (k === 'routeCosting' && s.routing) { S.route = null; S.steer = null; S.routeTs = 0; }

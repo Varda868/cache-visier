@@ -320,6 +320,22 @@ t('Team: Raster, Anteil und Planprüfung', () => {
   assert.strictEqual(p.r, 60); assert.strictEqual(p.s[0].n.length, 12);
   assert.deepStrictEqual(A.planPruefen({ v: 1, gc: 'GC1', ts: 9, ende: true }), { v: 1, gc: 'GC1', ts: 9, ende: true });
 });
+t('Sonden: Liste, Status, Landepunkt, Fundmeldung', () => {
+  const now = Date.parse('2026-11-26T14:00:00Z');
+  const roh = { A1: { serial: 'A1', subtype: 'RS41-SGP', lat: 48.62, lon: 9.85, alt: 878.4, vel_v: -10.3, datetime: '2026-11-26T13:55:00Z', frequency: 404.5 },
+    B2: { serial: 'B2', type: 'DFM17', lat: 48.40, lon: 10.95, alt: 25681, vel_v: 5.1, datetime: '2026-11-26T13:58:00Z' },
+    C3: { serial: 'C3', type: 'M20', lat: 48.38, lon: 10.90, alt: 600, vel_v: -4, datetime: '2026-11-26T12:00:00Z' },
+    X: { serial: 'X', lat: 'kaputt', lon: 10 } };
+  const l = A.sondenListe(roh, 48.37, 10.89, now);
+  assert.deepStrictEqual(l.map(s => s.serial), ['C3', 'B2', 'A1']);
+  assert.deepStrictEqual(l.map(s => s.status), ['unten', 'steigt', 'faellt']);
+  assert.strictEqual(l[2].typ, 'RS41-SGP'); assert.strictEqual(l[2].richtung, 'W'); assert.strictEqual(l[2].freq, 404.5);
+  const lp = A.landepunkte([{ vehicle: 'A1', data: JSON.stringify([{ time: 1, lat: 48.6, lon: 9.8, alt: 900 }, { time: 1795698034, lat: 48.622, lon: 9.8478, alt: 481.5 }]) }, { vehicle: 'K', data: '{kaputt' }]);
+  assert.strictEqual(lp.size, 1); assert.strictEqual(lp.get('A1').alt, 482);
+  const f = A.fundMeldungen([{ serial: 'A1', recovered: false, datetime: '2026-11-26T15:00:00', recovered_by: 'X' }, { serial: 'A1', recovered: true, datetime: '2026-11-26T16:01:53', recovered_by: 'XR61 + XR287', description: 'Waldlandung <b>' }]);
+  assert.strictEqual(f.get('A1').gefunden, true); assert.strictEqual(f.get('A1').ts, Date.parse('2026-11-26T16:01:53Z')); assert.ok(!f.get('A1').text.includes('<'));
+  assert.strictEqual(A.vorZeit(now - 25 * 60000, now), 'vor 25 min'); assert.strictEqual(A.vorZeit(now - 3 * 3600000, now), 'vor 3 h');
+});
 let sqlite; try { sqlite = await import('node:sqlite'); } catch (e) { sqlite = null; }
 if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
   const db = new sqlite.DatabaseSync(':memory:');

@@ -104,11 +104,12 @@ function renderTop() {
   let name = c ? c.name : t.name;
   if (t.kind === 'wpt') name = '📍 ' + t.label;
   if (t.kind === 'zone') name = '🎯 ' + t.label;
+  if (t.kind === 'sonde') name = '🎈 ' + t.label;
   $('#tName').textContent = name;
   if (c) {
     const ti = TYPE_INFO[c.type] || TYPE_INFO.other;
     $('#tSub').innerHTML = `<span class="dot" style="background:${ti[1]}"></span>${esc(c.geocode)} · ${ti[0]} · D${c.d || '?'}/T${c.t || '?'}${c.size ? ' · ' + esc(c.size) : ''}${c.found ? ' · ✅' : ''}${c.disabled ? ' · ⛔ deaktiviert' : ''}${gearBadge(c)}${tourPos(c.geocode) >= 0 ? ` · 🗺️ ${tourPos(c.geocode) + 1}/${S.tour.ids.length}` : ''}`;
-  } else $('#tSub').textContent = fmtCoord(t.lat, t.lon);
+  } else $('#tSub').textContent = (t.kind === 'sonde' ? 'Wettersonde · ' + (t.landen ? 'Landepunkt berechnet · ' : '') : '') + fmtCoord(t.lat, t.lon);
 }
 
 export { setTarget, _routeTimer, routeSoon, FOSSGIS, targetKey, activeRoute, requestRoute, onPosRoute, routeText, toggleRouting, drawRoute, targetCache, curCache, gearBadge, renderTop };
