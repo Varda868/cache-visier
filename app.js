@@ -1810,6 +1810,7 @@ async function initTalk() {
   const T = S.talk;
   $('#bTalk').hidden = !S.set.talkOn;
   if (T.pool) { T.pool.close(); T.pool = null; }
+  talkFab();
   if (!S.set.talkOn) return;
   if (!NX()) return toast('b:con talk: Nostr-Baustein fehlt');
   T.sk = await talkKey(); T.pk = NX().hex(NX().getPublicKey(T.sk));
@@ -1862,6 +1863,7 @@ async function talkEvent(ev) {
 }
 function updateTalkBadge() { const b = $('#bTalk'); b.dataset.n = S.talk.unread || ''; b.classList.toggle('badge', !!S.talk.unread); }
 function talkRenderStatus() {
+  talkFab();
   const el = $('#talkStatus'); if (!el) return;
   const st = S.talk.status || { offen: 0, gesamt: 0 }, ch = S.talk.channels || [];
   el.innerHTML = `${st.offen ? '🟢' : '🔴'} ${st.offen}/${st.gesamt} Relays · ${ch.length ? ch.map(c => c.icon + ' ' + esc(c.name)).join(' · ') : 'kein Kanal – Cache als Ziel wählen oder Team-Passwort setzen'} · du: ${esc(talkRufname())}`;
@@ -1914,11 +1916,8 @@ async function showTalk() {
     const send = txt => run(async () => { const n = await talkSend(txt); b.querySelector('#tText').value = ''; toast(`💬 gesendet (${n} Relay${n > 1 ? 's' : ''})`); });
     b.querySelector('#tSend').onclick = () => send(b.querySelector('#tText').value);
     b.querySelector('#tText').onkeydown = e => { if (e.key === 'Enter') send(e.target.value); };
-    b.querySelectorAll('input[name=tch]').forEach(r => { r.onchange = () => { S.talk.sendTo = r.value; }; });
-    const ptt = b.querySelector('#tPtt');
-    ptt.oncontextmenu = e => e.preventDefault();
-    ptt.onpointerdown = e => { e.preventDefault(); try { ptt.setPointerCapture(e.pointerId); } catch (x) { /* egal */ } run(pttStart); };
-    ptt.onpointerup = ptt.onpointercancel = () => run(pttStop);
+    b.querySelectorAll('input[name=tch]').forEach(r => { r.onchange = () => { S.talk.sendTo = r.value; talkFab(); }; });
+    bindPtt(b.querySelector('#tPtt'));
     bconVoice().then(B => B.SF.audio()).catch(() => {}); // Ton freischalten (Nutzergeste)
     b.querySelectorAll('[data-q]').forEach(q => {
       q.onclick = () => {
@@ -1944,6 +1943,25 @@ function bconVoice() {
   })().catch(e => { _bc = null; throw e; });
   return _bc;
 }
+function talkFab() {
+  const f = $('#fPtt'); if (!f) return;
+  const T = S.talk, ch = T.channels || [], on = !!(S.set.talkOn && T.pool && ch.length);
+  f.hidden = !on;
+  const c = ch.find(x => x.id === T.sendTo); $('#fPttCh').textContent = c ? c.icon : '';
+  f.title = c ? `Sprechen an ${c.name} (gedrückt halten)` : '';
+  if (on && !f._bound) { f._bound = true; bindPtt(f); bconVoice().catch(() => {}); } // Bausteine vorladen, damit der Druck sofort zählt
+}
+function bindPtt(el) {
+  el.oncontextmenu = e => e.preventDefault();
+  el.onpointerdown = e => { e.preventDefault(); S.talk.held = true; try { el.setPointerCapture(e.pointerId); } catch (x) { /* egal */ } run(pttStart); };
+  el.onpointerup = el.onpointercancel = () => { S.talk.held = false; run(pttStop); };
+}
+function pttShow(s) { // s = null: bereit, sonst Sekunden seit Start
+  const t = $('#tPtt'), f = $('#fPtt');
+  if (t) { t.classList.toggle('on', s != null); t.textContent = s == null ? '🎙️ Gedrückt halten zum Sprechen' : s > 25 ? `🎙️ noch ${Math.ceil(30 - s)} s` : `🎙️ spricht … ${Math.floor(s)} s`; }
+  if (f) { f.classList.toggle('on', s != null); $('#fPttT').textContent = s == null ? '' : s > 25 ? `noch ${Math.ceil(30 - s)}` : `${Math.floor(s)} s`; }
+  if (s == null) [t, f].forEach(e => e && e.style.removeProperty('--pegel'));
+}
 async function pttStart() {
   const T = S.talk;
   if (T.rec || T.recStarting) return;
@@ -1957,24 +1975,29 @@ async function pttStart() {
     T.rec = { a, codec, chan, t0: Date.now(), zeit };
     B.mic.agc = true;
     B.mic.beiRahmen = pcm => { if (T.rec) T.rec.a.rahmen(T.rec.codec.kodieren(pcm)); };
-    B.mic.beiPegel = p => { const el = $('#tPtt'); if (el && T.rec) el.style.setProperty('--pegel', Math.min(1, p * 3).toFixed(2)); };
+    B.mic.beiPegel = p => { if (!T.rec) return; const v = Math.min(1, p * 3).toFixed(2); [$('#tPtt'), $('#fPtt')].forEach(e => e && e.style.setProperty('--pegel', v)); };
     await B.mic.oeffnen(codec.n);
+    if (!T.held) {                                                        // losgelassen, während das Mikrofon aufging (z. B. Freigabe-Dialog)
+      T.rec = null; B.mic.beiRahmen = null; B.mic.schliessen(); codec.frei();
+      return toast('🎙️ Mikrofon bereit – zum Sprechen gedrückt halten');
+    }
+    T.rec.t0 = Date.now();
     B.SF.signal('frei'); buzz([30]);
-    const el = $('#tPtt'); if (el) el.classList.add('on');
+    pttShow(0);
     T.recTimer = setInterval(() => {
       if (!T.rec) return;
-      const s = (Date.now() - T.rec.t0) / 1000, e2 = $('#tPtt');
-      if (e2) e2.textContent = s > 25 ? `🎙️ noch ${Math.ceil(30 - s)} s` : `🎙️ spricht … ${Math.floor(s)} s`;
+      const s = (Date.now() - T.rec.t0) / 1000;
+      pttShow(s);
       if (s >= 30) run(pttStop);                                         // höchstens 30 s an Gruppen (b:con-Regel)
     }, 200);
   } finally { T.recStarting = false; }
 }
 async function pttStop() {
   const T = S.talk;
-  if (T.recStarting) { await new Promise(r => setTimeout(r, 300)); }
+  if (T.recStarting) return;                                              // pttStart merkt am Halte-Status selbst, dass losgelassen wurde
   const r = T.rec; if (!r) return;
   T.rec = null; clearInterval(T.recTimer);
-  const el = $('#tPtt'); if (el) { el.classList.remove('on'); el.textContent = '🎙️ Gedrückt halten zum Sprechen'; }
+  pttShow(null);
   const B = await bconVoice();
   B.mic.beiRahmen = null; B.mic.schliessen(); B.SF.signal('los'); r.codec.frei();
   const k = await r.a.fertig();
@@ -1992,9 +2015,9 @@ async function pttStop() {
 }
 async function voiceWeiter() {
   const T = S.talk; if (T.playing) return;
-  T.playing = true;
+  T.playing = true; $('#fPtt')?.classList.add('rx');
   while (T.queue.length) await voicePlay(T.queue.shift()).catch(e => console.warn('Wiedergabe', e));
-  T.playing = false;
+  T.playing = false; $('#fPtt')?.classList.remove('rx');
 }
 async function voicePlay(d) {
   const B = await bconVoice(), c = B.SF.CODECS[d.kopf.codec]; if (!c) return;

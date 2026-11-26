@@ -134,6 +134,8 @@ Mit Live-Daten der c:geo-App kann die PWA nicht arbeiten: c:geo hält seine Date
     - Höchstens 30 s je Durchsage, die letzten 5 s laufen sichtbar herunter.
     - Eingehende Durchsagen (jünger als 3 min) spielen nacheinander ab, ältere per ▶. Die Sprecher-Signatur wird geprüft.
     - Das Mikrofon ist nur offen, solange die Taste gedrückt ist.
+    - **Schwebender Sprechknopf** links unten über der Infoleiste, sobald talk an ist und es einen Kanal gibt (Cache als Ziel oder Team-Passwort). Das kleine Zeichen oben rechts zeigt den Kanal (🧩 Cache, 🔒 Team; umschalten im 💬-Blatt). Beim Sprechen rot mit Sekunden und Pegel, bei eingehender Durchsage pulsiert er blau. Bei offenem Blatt ist er ausgeblendet, bei offener Peilleiste rutscht er nach oben.
+    - Wird die Taste losgelassen, während das Mikrofon noch aufgeht (z. B. beim ersten Freigabe-Dialog), bleibt keine Aufnahme hängen.
   - **📍 Live-Position** (⚙️, Standard aus): alle 30 s im Team- oder auch im Cache-Kanal. Als flüchtiges Event (Art 20442), das Relays nicht speichern, versiegelt. Mitcacher erscheinen auf der Karte und im 💬-Blatt mit Entfernung („👥 LISA 34 m“).
   - Krypto ohne fremde Bibliothek (`nostr.js`), geprüft gegen die offiziellen Testvektoren von BIP-340, RFC 8439 und NIP-44 und gegen eine Python-Referenz.
 - **Attribute und Ausrüstung:**
