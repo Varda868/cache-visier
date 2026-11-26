@@ -13,7 +13,7 @@ async def main():
         await pg.click('#bStart'); await pg.wait_for_timeout(1000)
         await pg.evaluate("CV.caches.set('GC7GD1K', {geocode:'GC7GD1K', name:'Rosenau Multi', type:'multi', lat:48.3712, lon:10.8700, d:2, t:2, size:'Small', hint:'', logs:[], wpts:[], src:'gpx'})")
         await pg.click('#bList'); await pg.click('li.row'); await pg.wait_for_timeout(300)
-        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200)
+        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200); await pg.evaluate("document.querySelectorAll('details.grp').forEach(d => d.open = true)")
         await pg.fill('[data-k="talkName"]', 'pfersee'); await pg.press('[data-k="talkName"]', 'Tab')
         await pg.select_option('[data-k="talkLive"]', 'cache+team')
         await pg.check('[data-k="talkOn"]'); await pg.wait_for_timeout(2500); await pg.click('#sheetClose')

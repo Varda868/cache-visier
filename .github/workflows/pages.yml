@@ -26,7 +26,7 @@ jobs:
       - name: PHP vorhanden (für den Abgleich ki.js ↔ ki.php)
         run: php -v
       - name: Rechnungen, Import, Routing, Tour, Formeln
-        run: node test/test.js
+        run: node test/test.mjs
       - name: Nostr-Krypto (BIP-340, NIP-44, ChaCha20)
         run: node test/test_nostr.js
       - name: KI im Browser gleich ki.php, Anbieterkette
@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site/vendor/leaflet _site/vendor/sqljs
-          cp -r index.html style.css app.js nostr.js ki.js sw.js manifest.webmanifest icon-*.png bcon LICENSE _site/
+          cp -r index.html style.css js nostr.js ki.js sw.js manifest.webmanifest icon-*.png bcon LICENSE _site/
           cd "$RUNNER_TEMP"
           npm pack leaflet@1.9.4 sql.js@1.10.3 --silent
           tar -xzf leaflet-1.9.4.tgz

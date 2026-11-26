@@ -11,6 +11,7 @@ async def main():
         pg = await ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append(str(e)))
         await pg.goto('http://127.0.0.1:8797/index.html'); await pg.wait_for_timeout(600)
+        await pg.evaluate("CV.set.kiMode = 'skript'; CV.set.apiUrl = './api/ki.php'")  # Weg „eigenes KI-Skript“ (Mock)
         await pg.evaluate("""(multi) => { window._calls = []; const of = window.fetch; window.fetch = async (u, o) => { u = String(u);
           if (u.includes('api/ki.php')) { const body = JSON.parse(o.body); window._calls.push({aktion: body.aktion, bildKB: body.bild ? Math.round(body.bild.length / 1024) : 0, frage: body.station && body.station.aufgabe, besch: body.beschreibung && body.beschreibung.slice(0, 40)});
             if (body.aktion === 'multi') return new Response(JSON.stringify({ok: true, model: 'Groq · mock', result: multi}));

@@ -1,6 +1,5 @@
-'use strict';
-const assert = require('assert');
-const A = require('../app.js');
+import assert from 'node:assert';
+import * as A from '../js/kern/index.js';
 let n = 0; const t = (name, fn) => { fn(); n++; console.log('✓', name); };
 const near = (a, b, e = 1e-6) => assert.ok(Math.abs(a - b) < e, `${a} ≉ ${b}`);
 
@@ -237,7 +236,7 @@ t('Stationen auflösen inkl. Peilung', () => {
 });
 
 // c:geo-Datenbank nachbauen
-let sqlite; try { sqlite = require('node:sqlite'); } catch (e) { sqlite = null; }
+let sqlite; try { sqlite = await import('node:sqlite'); } catch (e) { sqlite = null; }
 if (sqlite) t('c:geo-Backup einlesen (nachgebaute Tabellen)', () => {
   const db = new sqlite.DatabaseSync(':memory:');
   db.exec(`CREATE TABLE cg_caches(_id INTEGER PRIMARY KEY, updated LONG, detailed INTEGER, geocode TEXT UNIQUE, name TEXT, type TEXT, latitude DOUBLE, longitude DOUBLE,

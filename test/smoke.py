@@ -56,8 +56,8 @@ async def main():
         await pg.screenshot(path='shot-log.png')
         await pg.click('#sheetClose')
         await pg.click('#bTorch'); await pg.wait_for_timeout(300); print('Toast Lampe:', await pg.text_content('#toast'))
-        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200); print('Einstellungsfelder:', await pg.locator('#sheetBody [data-k]').count()); await pg.click('#sheetClose')
-        await pg.click('#bList'); await pg.click('#lDiag'); await pg.wait_for_timeout(300); await pg.screenshot(path='shot-diag.png'); await pg.click('#sheetClose')
+        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200); await pg.evaluate("document.querySelectorAll('details.grp').forEach(d => d.open = true)"); print('Einstellungsfelder:', await pg.locator('#sheetBody [data-k]').count()); await pg.click('#sheetClose')
+        await pg.click('#bList'); await pg.evaluate("document.querySelector('#lMoreBox').hidden && document.querySelector('#lMore').click()"); await pg.click('#lDiag'); await pg.wait_for_timeout(300); await pg.screenshot(path='shot-diag.png'); await pg.click('#sheetClose')
         # KI mit gemocktem fetch (Skript + OSM) – Weg „eigenes KI-Skript“
         await pg.evaluate("CV.set.kiMode = 'skript'; CV.set.apiUrl = './api/ki.php'")
         await pg.evaluate("""() => { const of = window.fetch; window.fetch = async (u, o) => {

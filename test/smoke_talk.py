@@ -22,7 +22,7 @@ async def main():
         print('Knopf vor dem Einschalten sichtbar:', await pg.is_visible('#bTalk'))
         await pg.evaluate("CV.caches.set('GC7GD1K', {geocode:'GC7GD1K', name:'Rosenau Multi', type:'multi', lat:48.3712, lon:10.8700, d:2, t:2, size:'Small', hint:'', logs:[], wpts:[], src:'gpx'})")
         await pg.click('#bList'); await pg.click('li.row'); await pg.wait_for_timeout(300)
-        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200)
+        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200); await pg.evaluate("document.querySelectorAll('details.grp').forEach(d => d.open = true)")
         await pg.fill('[data-k="talkName"]', 'pfersee'); await pg.press('[data-k="talkName"]', 'Tab')
         await pg.check('[data-k="talkOn"]'); await pg.wait_for_timeout(2500)
         await pg.click('#sheetClose')
@@ -48,7 +48,7 @@ async def main():
         print('Ungelesen:', await pg.get_attribute('#bTalk', 'data-n'), '| Toast:', await pg.text_content('#toast'))
         print('anderer Cache sichtbar:', await pg.evaluate("CV.talk.msgs.some(m => m.text === 'anderer Cache')"), '| Position gemerkt:', await pg.evaluate("Object.values(CV.talk.pos).map(p => p.name)"))
         # Team-Passwort dazu
-        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200)
+        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(200); await pg.evaluate("document.querySelectorAll('details.grp').forEach(d => d.open = true)")
         await pg.fill('[data-k="talkPw"]', 'geheim'); await pg.press('[data-k="talkPw"]', 'Tab'); await pg.wait_for_timeout(4000)
         await pg.click('#sheetClose')
         await pg.click('#bTalk'); await pg.wait_for_timeout(600)

@@ -12,12 +12,16 @@ Dazu: Hint (verschwommen, ROT13), D/T, Größe, Logs zum Scrollen, Lampe, Fotos,
 
 | Datei | Zweck |
 |---|---|
-| `index.html`, `style.css`, `app.js` | die App |
+| `index.html`, `style.css` | Seite und Aussehen |
+| `js/main.js` | Einstieg: lädt die Module, startet die App |
+| `js/kern/` | reiner Teil ohne Browser, auch in Node getestet: `geo` (Koordinaten, Richtung, Lage des Handys), `caches` (Typen, c:geo-Import, Feldnotizen), `ausruestung`, `reflektor`, `formeln` (Multi), `route`, `sonne`; `index.js` sammelt alles für die Tests |
+| `js/ui/` | Oberfläche, je Bereich ein Modul: `basis` (Zustand, Speicher, Blätter), `import`, `ziel-routing`, `sensoren`, `kamera`, `karte`, `anzeige` (Hauptschleife), `blaetter` (Liste, Infos, Logs), `ki-auswertung`, `multi`, `ansagen`, `nacht`, `peilung`, `talk`, `funk`, `offline`, `tour`, `log`, `einstellungen` |
+| `ki.js`, `nostr.js` | KI mit eigenem Schlüssel; Nostr-Krypto für b:con talk |
 | `sw.js`, `manifest.webmanifest`, `icon-*.png` | Installation, Offline-Betrieb, Empfang über „Teilen“ |
 | `api/inc.php`, `api/route.php` | gemeinsamer Start (Konfiguration, Token); Weiterleitung zu Valhalla |
 | `api/ki.php` | KI-Skript auf deinem Server. Die Schlüssel bleiben dort, die App kennt nur ein Token. |
 | `api/config.sample.php` | Vorlage für `api/config.php` |
-| `test/` | Tests: `node test/test.js`; Browser-Test `smoke.py` mit Playwright |
+| `test/` | Tests: `node test/test.mjs`, `node test/test_nostr.js`, `node test/test_ki.js`; Browser-Tests `smoke*.py` mit Playwright |
 
 ## Einrichten
 
@@ -211,6 +215,8 @@ Für den Betrieb auf einem eigenen Server mit PHP: Weg „über ein eigenes KI-S
 - **Fadenkreuz:** Es wird grün, wenn das Ziel in der Bildmitte liegt.
 - **Rand-Pfeil:** Liegt das Ziel außerhalb des Bildes, zeigt ein Pfeil am Rand die Richtung.
 - **Nahbereich:** Unter etwa dem 1,3-fachen der GPS-Genauigkeit erscheint „Nahbereich“. Dort sagen Pfeil und Markierung nichts mehr aus, dann zählen Hint und Logs.
+
+**Menü ☰:** oben Caches laden (c:geo-Backup, Datei, Opencaching), 🗺️ Tour und ⚙️ Einstellungen. Unter „⋯ Mehr“: 🤖 Alle auswerten, 📐 Peilung, 📦 Offline, 🩺 Diagnose. Die Einstellungen sind in Gruppen zum Aufklappen sortiert, die wichtigsten zuerst (KI, Unterwegs, Anzeige, Ausrüstung).
 
 **Kalibrieren** (⚙️ Einstellungen):
 - „Bildwinkel“ so einstellen, dass die Markierung bei einem bekannten, entfernten Punkt auf dem Punkt sitzt.

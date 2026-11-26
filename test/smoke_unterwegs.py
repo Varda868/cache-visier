@@ -36,7 +36,7 @@ async def main():
         await pg.screenshot(path='/tmp/shot-nacht.png')
         await pg.click('#bNight')
         # Peilung eingeben: 100 Schritte zu 0,75 m nach 90° vom Standort
-        await pg.click('#bList'); await pg.click('#lPeil'); await pg.wait_for_timeout(200)
+        await pg.click('#bList'); await pg.evaluate("document.querySelector('#lMoreBox').hidden && document.querySelector('#lMore').click()"); await pg.click('#lPeil'); await pg.wait_for_timeout(200)
         await pg.fill('#pDist', '100'); await pg.select_option('#pUnit', 'steps'); await pg.fill('#pDeg', '90'); await pg.click('#pCalc'); await pg.wait_for_timeout(200)
         print('Peilung:', ' '.join((await pg.text_content('#pRes')).split())[:110])
         # Mit der Kamera peilen: Handy Richtung Osten, leicht nach unten geneigt (beta 80 → Kamera 10° nach unten)

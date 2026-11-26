@@ -15,7 +15,7 @@ async def main():
         await pg.goto('http://127.0.0.1:8797/index.html'); await pg.wait_for_timeout(500)
         await pg.click('#bStart'); await pg.wait_for_timeout(800)
         await pg.evaluate("CV.caches.set('GC7GD1K', {geocode:'GC7GD1K', name:'Rosenau Multi', type:'multi', lat:48.3712, lon:10.8700, d:2, t:2, size:'Small', hint:'Stein', logs:[{date:Date.now(), type:'Found it', author:'LISA', text:'unter dem Stein'}], wpts:[], src:'gpx'})")
-        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(300)
+        await pg.click('#bList'); await pg.click('#lSet'); await pg.wait_for_timeout(300); await pg.evaluate("document.querySelectorAll('details.grp').forEach(d => d.open = true)")
         print('Anbieter:', await pg.locator('.kiA').count(), '| Skript-Felder versteckt:', await pg.is_hidden('#kiSkript'), '| Routing:', await pg.input_value('[data-k="routeUrl"]'))
         await pg.fill('[data-k="kiKey_gemini"]', 'test-schluessel'); await pg.press('[data-k="kiKey_gemini"]', 'Tab')
         await pg.click('.kiP[data-a="gemini"]'); await pg.wait_for_timeout(600)
